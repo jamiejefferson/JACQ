@@ -138,8 +138,7 @@ export async function completeWithTools(
 export async function completeWithToolsRaw(
   config: LLMResolvedConfig,
   system: string,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  messages: Array<{ role: "user" | "assistant"; content: any }>,
+  messages: Array<{ role: "user" | "assistant"; content: unknown }>,
   tools: ToolDef[] = anthropicTools()
 ): Promise<LLMResponse> {
   if (config.provider !== "anthropic") {
