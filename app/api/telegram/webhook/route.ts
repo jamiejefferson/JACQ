@@ -32,6 +32,14 @@ async function sendTelegramMessage(botToken: string, chatId: number, text: strin
   });
 }
 
+async function sendTypingIndicator(botToken: string, chatId: number) {
+  await fetch(`https://api.telegram.org/bot${botToken}/sendChatAction`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ chat_id: chatId, action: "typing" }),
+  });
+}
+
 async function handleStartCommand(
   supabase: ReturnType<typeof createAdminClient>,
   chatId: number,
@@ -89,6 +97,9 @@ async function handleChatMessage(
   }
 
   const userId = integration.user_id;
+
+  // Show "typing..." indicator
+  await sendTypingIndicator(botToken, chatId);
 
   // Resolve LLM config
   const config = await resolveLLMConfig(supabase, userId);
