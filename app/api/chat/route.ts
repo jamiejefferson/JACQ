@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAndUser } from "@/lib/api-auth";
 import { assembleContext, formatContextBlock } from "@/lib/context";
 import { resolveLLMConfig, completeWithTools } from "@/lib/llm-client";
+import { buildSystemPrompt } from "@/lib/system-prompt";
 import { executeTool } from "@/lib/tool-execution";
 
 export const runtime = "nodejs";
@@ -51,8 +52,7 @@ export async function POST(request: NextRequest) {
 
   const pkg = await assembleContext(supabase, user.id);
   const contextBlock = formatContextBlock(pkg);
-  const system =
-    `You are Jacq, a thoughtful PA that learns about the user and helps with tasks. Use the context below to personalise your replies. When the user tells you something about themselves, their preferences, or someone they know, use the appropriate tool to save it.\n\n${contextBlock}`;
+  const system = buildSystemPrompt(contextBlock, "web");
 
   const apiMessages = messages.map((m) => ({
     role: m.role as "user" | "assistant",

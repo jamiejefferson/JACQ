@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { assembleContext, formatContextBlock } from "@/lib/context";
 import { resolveLLMConfig, completeWithTools, completeWithToolsRaw } from "@/lib/llm-client";
+import { buildSystemPrompt } from "@/lib/system-prompt";
 import { executeTool } from "@/lib/tool-execution";
 
 const CONFIG_ID = "00000000-0000-0000-0000-000000000001";
@@ -139,7 +140,7 @@ async function handleChatMessage(
   // Build system prompt with context
   const pkg = await assembleContext(supabase, userId);
   const contextBlock = formatContextBlock(pkg);
-  const system = `You are Jacq, a thoughtful PA that learns about the user and helps with tasks. You are chatting via Telegram — keep replies concise and conversational. Use the context below to personalise your replies. When the user tells you something about themselves, their preferences, or someone they know, use the appropriate tool to save it.\n\n${contextBlock}`;
+  const system = buildSystemPrompt(contextBlock, "telegram");
 
   const apiMessages = allMessages.map((m) => ({
     role: m.role as "user" | "assistant",
