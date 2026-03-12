@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { assembleContext, formatContextBlock } from "@/lib/context";
-import { resolveLLMConfig, completeWithTools } from "@/lib/llm-client";
+import { resolveLLMConfig, completeWithTools, completeWithToolsRaw } from "@/lib/llm-client";
 import { executeTool } from "@/lib/tool-execution";
 
 const CONFIG_ID = "00000000-0000-0000-0000-000000000001";
@@ -147,17 +147,57 @@ async function handleChatMessage(
   }));
 
   // Call LLM
-  const result = await completeWithTools(config, system, apiMessages);
+  let result = await completeWithTools(config, system, apiMessages);
+  let content = result.content;
 
-  // Execute any tool calls
-  for (const tc of result.toolCalls) {
-    await executeTool(supabase, userId, sessionId, tc.name, tc.input);
+  // If the LLM used tools, execute them and do a follow-up call for a text reply
+  if (result.toolCalls.length > 0) {
+    const toolResults: Array<{ tool_use_id: string; result: string }> = [];
+    for (const tc of result.toolCalls) {
+      const toolResult = await executeTool(supabase, userId, sessionId, tc.name, tc.input);
+      toolResults.push({
+        tool_use_id: tc.id,
+        result: toolResult.ok ? `Done: ${tc.name}` : `Failed: ${toolResult.reason ?? "unknown error"}`,
+      });
+    }
+
+    // If no text content, do a follow-up call with tool results so the model can respond
+    if (!content) {
+      // Build the full message sequence for the follow-up
+      const followUpMessages = [
+        ...apiMessages,
+        {
+          role: "assistant" as const,
+          content: result.toolCalls.map((tc) => ({
+            type: "tool_use" as const,
+            id: tc.id,
+            name: tc.name,
+            input: tc.input,
+          })),
+        },
+        {
+          role: "user" as const,
+          content: toolResults.map((tr) => ({
+            type: "tool_result" as const,
+            tool_use_id: tr.tool_use_id,
+            content: tr.result,
+          })),
+        },
+      ];
+
+      try {
+        const followUp = await completeWithToolsRaw(config, system, followUpMessages);
+        content = followUp.content;
+      } catch {
+        content = "Done! I've saved that.";
+      }
+    }
   }
 
   // Save messages to session
   const updatedMessages = [
     ...allMessages,
-    { role: "assistant", content: result.content },
+    { role: "assistant", content: content || "" },
   ];
   await supabase
     .from("chat_sessions")
@@ -168,7 +208,7 @@ async function handleChatMessage(
     .eq("id", sessionId);
 
   // Send reply
-  const reply = result.content || "I'm not sure how to respond to that.";
+  const reply = content || "Done! I've saved that.";
   await sendTelegramMessage(botToken, chatId, reply);
 }
 

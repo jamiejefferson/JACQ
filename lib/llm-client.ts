@@ -133,3 +133,60 @@ export async function completeWithTools(
 
   return { content, toolCalls, usage };
 }
+
+/** Like completeWithTools but accepts pre-formatted messages (e.g. with tool_use/tool_result blocks). */
+export async function completeWithToolsRaw(
+  config: LLMResolvedConfig,
+  system: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  messages: Array<{ role: "user" | "assistant"; content: any }>,
+  tools: ToolDef[] = anthropicTools()
+): Promise<LLMResponse> {
+  if (config.provider !== "anthropic") {
+    return { content: "Only Anthropic is supported for tool calls in this build.", toolCalls: [] };
+  }
+
+  const body = {
+    model: config.model,
+    max_tokens: 4096,
+    system,
+    messages,
+    tools: tools.length ? tools : undefined,
+  };
+
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "x-api-key": config.apiKey,
+      "anthropic-version": "2023-06-01",
+      "content-type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`LLM request failed: ${res.status} ${errText}`);
+  }
+
+  const data = (await res.json()) as {
+    content?: Array<{ type: string; text?: string; id?: string; name?: string; input?: Record<string, unknown> }>;
+    usage?: { input_tokens: number; output_tokens: number };
+  };
+
+  let content = "";
+  const toolCalls: ToolCall[] = [];
+
+  for (const block of data.content ?? []) {
+    if (block.type === "text" && block.text) content += block.text;
+    if (block.type === "tool_use" && block.id && block.name) {
+      toolCalls.push({ id: block.id, name: block.name, input: (block.input ?? {}) as Record<string, unknown> });
+    }
+  }
+
+  const usage = data.usage
+    ? { prompt_tokens: data.usage.input_tokens, completion_tokens: data.usage.output_tokens }
+    : undefined;
+
+  return { content, toolCalls, usage };
+}
