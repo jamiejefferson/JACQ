@@ -1,0 +1,125 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Mobile-shaped container on desktop: content stays 375px wide, centered, with neutral bands on the sides */
+.mobile-container {
+  min-height: 100vh;
+  width: 100%;
+}
+
+@media (min-width: 376px) {
+  html {
+    box-sizing: border-box;
+    height: 100%;
+  }
+
+  body {
+    box-sizing: border-box;
+    background-color: #2d2d2d !important;
+    height: 100vh;
+    min-height: 100vh;
+    margin: 0;
+    padding: 20px 0 !important;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+  }
+
+  .mobile-container {
+    width: 375px;
+    min-height: 0;
+    height: calc(100vh - 40px);
+    max-height: calc(100vh - 40px);
+    border-radius: 2rem;
+    overflow: hidden;
+    background-color: var(--jacq-bg);
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.06);
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+  }
+
+  .mobile-container > div {
+    flex: 1 1 0;
+    min-height: 0;
+    overflow: auto;
+  }
+}
+
+/* Jacq design tokens — light (default), spec Section 2 */
+:root {
+  --jacq-bg: #f5f2ec;
+  --jacq-surf: #ffffff;
+  --jacq-surf2: #ede8e1;
+  --jacq-surf3: #e3ddd5;
+  --jacq-bord: rgba(0, 0, 0, 0.08);
+  --jacq-bord2: rgba(0, 0, 0, 0.04);
+  --jacq-t1: #1a1710;
+  --jacq-t2: #7a7268;
+  --jacq-t3: #aea79e;
+  --jacq-gold: #b8935a;
+  --jacq-goldl: rgba(184, 147, 90, 0.1);
+  --jacq-goldb: rgba(184, 147, 90, 0.22);
+  --jacq-green: #3a9468;
+  --jacq-greenl: rgba(58, 148, 104, 0.1);
+  --jacq-amber: #c07b28;
+  --jacq-amberl: rgba(192, 123, 40, 0.1);
+  --jacq-red: #c0443a;
+  --jacq-redl: rgba(192, 68, 58, 0.08);
+  --jacq-blue: #3060b8;
+  --jacq-bluel: rgba(48, 96, 184, 0.08);
+}
+
+[data-theme="dark"] {
+  --jacq-bg: #131108;
+  --jacq-surf: #1c1a12;
+  --jacq-surf2: #242218;
+  --jacq-surf3: #2c2a20;
+  --jacq-bord: rgba(255, 255, 255, 0.07);
+  --jacq-bord2: rgba(255, 255, 255, 0.03);
+  --jacq-t1: #ede8df;
+  --jacq-t2: #787060;
+  --jacq-t3: #48443c;
+}
+
+/* Legacy class for backwards compatibility */
+.dark {
+  --jacq-bg: #131108;
+  --jacq-surf: #1c1a12;
+  --jacq-surf2: #242218;
+  --jacq-surf3: #2c2a20;
+  --jacq-bord: rgba(255, 255, 255, 0.07);
+  --jacq-bord2: rgba(255, 255, 255, 0.03);
+  --jacq-t1: #ede8df;
+  --jacq-t2: #787060;
+  --jacq-t3: #48443c;
+}
+
+@layer base {
+  body {
+    @apply font-dm-sans text-jacq-t1 antialiased;
+    background-color: var(--jacq-bg);
+  }
+}
+
+/* Desktop bezel: must win after Tailwind base — 20px band above and below the phone frame */
+@media (min-width: 376px) {
+  html {
+    height: 100%;
+  }
+  body {
+    padding-top: 20px !important;
+    padding-bottom: 20px !important;
+    height: 100vh !important;
+    min-height: 100vh !important;
+    box-sizing: border-box !important;
+    overflow: hidden !important;
+  }
+  .mobile-container {
+    min-height: 0 !important;
+    height: calc(100vh - 40px) !important;
+    max-height: calc(100vh - 40px) !important;
+  }
+}

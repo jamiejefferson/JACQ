@@ -1,0 +1,29 @@
+# JACQ — LLM Evaluation Configuration
+# Run with: promptfoo eval -c tests/evals/promptfoo.yaml
+
+description: "JACQ PA behavior evaluations"
+
+prompts:
+  - file://system-prompt.txt
+
+providers:
+  - id: anthropic:claude-3-5-sonnet-20241022
+    config:
+      temperature: 0.7
+      max_tokens: 1024
+
+# Default test configuration
+defaultTest:
+  options:
+    transformVars: "{ ...vars, timestamp: new Date().toISOString() }"
+
+# Import test suites
+tests:
+  - file://calendar-evals.yaml
+  - file://email-evals.yaml
+  - file://memory-evals.yaml
+  - file://proactive-evals.yaml
+  - file://personality-evals.yaml
+
+# Output configuration
+outputPath: ./eval-results.json

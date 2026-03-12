@@ -1,0 +1,86 @@
+# Email Tool Evaluations
+
+tests:
+  # Email drafting
+  - description: "Draft a simple email"
+    vars:
+      input: "Email Sarah to reschedule our 1:1 to Thursday"
+    assert:
+      - type: llm-rubric
+        value: "Response drafts an email or shows a draft, addressed to Sarah, about rescheduling"
+      - type: contains-any
+        value: ["Sarah", "Thursday", "reschedule", "1:1"]
+      - type: not-contains
+        value: "I can't send emails"
+
+  - description: "Email with specific tone"
+    vars:
+      input: "Write a polite email declining the sales meeting"
+    assert:
+      - type: llm-rubric
+        value: "Response drafts a polite, professional decline that doesn't burn bridges"
+      - type: not-contains-any
+        value: ["not interested", "stop contacting", "unsubscribe"]
+
+  # Email follow-ups
+  - description: "Follow up on unanswered email"
+    vars:
+      input: "I sent an email to Acme Corp 5 days ago and haven't heard back"
+    assert:
+      - type: llm-rubric
+        value: "Response offers to draft a follow-up email or send a nudge"
+      - type: contains-any
+        value: ["follow up", "nudge", "check in", "reminder"]
+
+  # Email summarization
+  - description: "Summarize email thread"
+    vars:
+      input: "Summarize my emails from today"
+      context: |
+        Emails received today:
+        - From: Sarah (urgent) - Budget approval needed by Friday
+        - From: Tom - Q2 planning doc attached
+        - From: Newsletter - Weekly digest
+        - From: Sales cold outreach - Demo request
+    assert:
+      - type: llm-rubric
+        value: "Response prioritizes urgent items (Sarah's budget) and filters out noise (newsletter, cold outreach)"
+      - type: contains
+        value: "Sarah"
+
+  # Email triage
+  - description: "Identify urgent emails"
+    vars:
+      input: "Anything urgent in my inbox?"
+      context: |
+        - Sarah (VIP): "Need your sign-off ASAP"
+        - LinkedIn: "You have new connection requests"
+        - Tom: "FYI - updated the doc"
+        - Client: "Payment overdue - please advise"
+    assert:
+      - type: contains-any
+        value: ["Sarah", "Client", "urgent", "ASAP", "overdue"]
+      - type: llm-rubric
+        value: "Response identifies Sarah and Client emails as needing attention, deprioritizes LinkedIn"
+
+  # Reply drafting
+  - description: "Draft reply to specific email"
+    vars:
+      input: "Reply to Sarah saying I'll have the budget ready by Thursday"
+      context: |
+        Email from Sarah: "Hi, when can you get me the budget numbers? Finance is asking."
+    assert:
+      - type: llm-rubric
+        value: "Response drafts a reply that directly answers Sarah's question with Thursday commitment"
+      - type: contains
+        value: "Thursday"
+
+  # Commitment tracking in email
+  - description: "Track email commitments"
+    vars:
+      input: "Draft an email to the team saying I'll send the report by Friday"
+    assert:
+      - type: llm-rubric
+        value: "Response drafts the email AND acknowledges it will track this commitment"
+      - type: contains
+        value: "Friday"

@@ -1,0 +1,110 @@
+# Memory & Context Evaluations
+
+tests:
+  # Memory recall
+  - description: "Recall stored fact"
+    vars:
+      input: "What was that restaurant I mentioned last week?"
+      context: |
+        Memory: User mentioned liking Padella in Borough Market on March 2nd.
+    assert:
+      - type: contains
+        value: "Padella"
+      - type: llm-rubric
+        value: "Response recalls the restaurant name and optionally the context (Borough Market)"
+
+  - description: "Recall person context"
+    vars:
+      input: "What do I know about Sarah?"
+      context: |
+        Memory about Sarah:
+        - Direct report, weekly 1:1 on Thursdays
+        - Working on Q2 marketing campaign
+        - Prefers morning meetings
+        - Last discussed: budget concerns
+    assert:
+      - type: contains-any
+        value: ["direct report", "1:1", "marketing", "morning"]
+      - type: llm-rubric
+        value: "Response provides helpful summary of known information about Sarah"
+
+  # Memory storage
+  - description: "Store new fact"
+    vars:
+      input: "Remember that my anniversary is March 22nd"
+    assert:
+      - type: llm-rubric
+        value: "Response confirms storing the information and may offer to set a reminder"
+      - type: contains
+        value: "March 22"
+
+  - description: "Store preference"
+    vars:
+      input: "I never want meetings before 9am"
+    assert:
+      - type: llm-rubric
+        value: "Response confirms storing preference and may indicate it will apply to future scheduling"
+      - type: contains-any
+        value: ["9am", "remember", "noted", "preference"]
+
+  # Memory search
+  - description: "Search memory for topic"
+    vars:
+      input: "What did we decide about the product launch?"
+      context: |
+        Memory: On March 5, decided to delay launch by 2 weeks due to QA issues.
+    assert:
+      - type: contains-any
+        value: ["delay", "2 weeks", "March 5", "QA"]
+      - type: llm-rubric
+        value: "Response references the decision and provides context"
+
+  # Disambiguation
+  - description: "Handle ambiguous name"
+    vars:
+      input: "Send an email to Sarah"
+      context: |
+        Multiple contacts named Sarah:
+        - Sarah Chen (direct report)
+        - Sarah Jefferson (mum)
+    assert:
+      - type: llm-rubric
+        value: "Response asks for clarification about which Sarah, listing the options"
+      - type: contains-any
+        value: ["which Sarah", "Chen", "direct report", "clarify"]
+
+  # Context-aware responses
+  - description: "Use relationship context"
+    vars:
+      input: "Draft a message to Tom about the delay"
+      context: |
+        Tom: Co-founder, high priority contact, prefers direct communication
+        Recent context: Product launch was delayed 2 weeks
+    assert:
+      - type: llm-rubric
+        value: "Response drafts a direct message appropriate for a co-founder relationship"
+
+  # Memory limitations acknowledgment
+  - description: "Handle missing memory gracefully"
+    vars:
+      input: "What did John say in our meeting?"
+    assert:
+      - type: llm-rubric
+        value: "Response acknowledges it doesn't have that information and may ask for more context"
+      - type: not-contains
+        value: "error"
+
+  # Commitment recall
+  - description: "Recall active commitments"
+    vars:
+      input: "What did I promise to do this week?"
+      context: |
+        Active commitments:
+        - Send budget to Sarah by Friday
+        - Follow up with Acme if no reply by Wednesday
+        - Book restaurant for anniversary
+    assert:
+      - type: contains-any
+        value: ["budget", "Sarah", "Acme", "restaurant"]
+      - type: llm-rubric
+        value: "Response lists active commitments clearly with due dates"

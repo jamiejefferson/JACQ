@@ -1,0 +1,90 @@
+# Calendar Tool Evaluations
+
+tests:
+  # Basic calendar queries
+  - description: "Query today's calendar"
+    vars:
+      input: "What's on my calendar today?"
+      calendar: |
+        - 10:00 Team standup (30 min)
+        - 14:00 Client call with Acme (1 hr)
+        - 16:30 1:1 with Sarah
+    assert:
+      - type: contains-any
+        value: ["standup", "Acme", "Sarah"]
+      - type: llm-rubric
+        value: "Response summarizes the day's events clearly and concisely"
+      - type: not-contains
+        value: "I don't have access"
+
+  - description: "Query empty calendar"
+    vars:
+      input: "What do I have on today?"
+      calendar: ""
+    assert:
+      - type: llm-rubric
+        value: "Response indicates calendar is clear/empty, possibly suggests using the time"
+      - type: not-contains
+        value: "error"
+
+  # Calendar creation
+  - description: "Schedule a meeting"
+    vars:
+      input: "Schedule a meeting with Tom tomorrow at 2pm"
+    assert:
+      - type: llm-rubric
+        value: "Response confirms creating an event OR asks for clarification (duration, title)"
+      - type: contains-any
+        value: ["Tom", "2pm", "tomorrow", "14:00"]
+      - type: not-contains
+        value: "I can't"
+
+  - description: "Schedule meeting with missing info"
+    vars:
+      input: "Set up a meeting with Sarah"
+    assert:
+      - type: llm-rubric
+        value: "Response asks for missing information (when, duration) rather than refusing"
+      - type: not-contains
+        value: "I don't have enough"
+
+  # Conflict detection
+  - description: "Detect double booking"
+    vars:
+      input: "Schedule a call at 10am tomorrow"
+      calendar: |
+        Tomorrow:
+        - 10:00 Team standup (30 min)
+    assert:
+      - type: llm-rubric
+        value: "Response identifies the conflict with standup and suggests alternatives"
+      - type: contains-any
+        value: ["conflict", "already", "standup", "alternative", "reschedule"]
+
+  # Proactive calendar insights
+  - description: "Proactive travel time suggestion"
+    vars:
+      input: "What's my day look like?"
+      calendar: |
+        - 10:00 Coffee with Sam (Shoreditch Grind)
+        - 11:30 Video call
+        - 14:00 Client meeting (WeWork Moorgate)
+    assert:
+      - type: llm-rubric
+        value: "Response notes logistics: Shoreditch locations, travel considerations, or suggests staying in area"
+
+  # Find free time
+  - description: "Find free time"
+    vars:
+      input: "When am I free this week?"
+      calendar: |
+        Monday: Fully booked
+        Tuesday: 9-12 meetings, afternoon free
+        Wednesday: All day free
+        Thursday: Morning free, afternoon meetings
+        Friday: Fully booked
+    assert:
+      - type: contains-any
+        value: ["Tuesday", "Wednesday", "Thursday"]
+      - type: llm-rubric
+        value: "Response identifies specific free slots and may suggest booking focus time"

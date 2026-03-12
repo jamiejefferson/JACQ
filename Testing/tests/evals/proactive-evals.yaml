@@ -1,0 +1,118 @@
+# Proactive Behavior Evaluations
+
+tests:
+  # Morning briefing quality
+  - description: "Morning briefing with implications"
+    vars:
+      input: "Good morning, what's my day look like?"
+      calendar: |
+        - 10:00 Coffee with Sam (Shoreditch Grind)
+        - 14:00 Client meeting (WeWork Shoreditch)
+        - 16:00 Video call (can be anywhere)
+      context: |
+        Weather: 14°C, cloudy, dry
+        Pending: Follow up with Acme (3 days overdue)
+    assert:
+      - type: llm-rubric
+        value: "Response notes the Shoreditch cluster (can stay in area), mentions weather for outfit, and flags the overdue follow-up"
+      - type: contains-any
+        value: ["Shoreditch", "stay", "Acme", "follow up"]
+
+  # Proactive suggestions
+  - description: "Suggest blocking focus time"
+    vars:
+      input: "What's my week look like?"
+      calendar: |
+        Monday: 6 hours of meetings
+        Tuesday: 5 hours of meetings
+        Wednesday: 4 hours of meetings, 2pm-5pm free
+        Thursday: 7 hours of meetings
+        Friday: 3 hours of meetings
+    assert:
+      - type: llm-rubric
+        value: "Response identifies the heavy meeting load and proactively suggests protecting the Wednesday free slot"
+      - type: contains-any
+        value: ["Wednesday", "heavy", "focus", "block", "protect"]
+
+  - description: "Suggest prep time for important meeting"
+    vars:
+      input: "What's tomorrow?"
+      calendar: |
+        - 09:00 Emails
+        - 14:00 Board presentation (1 hr)
+        - 16:00 Team sync
+      context: |
+        No prep time blocked for board presentation
+    assert:
+      - type: llm-rubric
+        value: "Response identifies the board presentation and proactively asks about prep or offers to block time"
+      - type: contains-any
+        value: ["board", "prep", "prepare", "important"]
+
+  # Offer to take action
+  - description: "Offer to book lunch"
+    vars:
+      input: "I have back to back meetings in Shoreditch tomorrow"
+      context: |
+        User liked Padella last time (Borough Market)
+        Meetings: 10am and 2pm in Shoreditch
+    assert:
+      - type: llm-rubric
+        value: "Response identifies the gap and offers to book lunch, possibly suggesting a nearby place"
+      - type: contains-any
+        value: ["lunch", "book", "restaurant", "gap"]
+
+  # Pattern-based suggestions
+  - description: "Notice and suggest based on pattern"
+    vars:
+      input: "Schedule a meeting for Friday afternoon"
+      context: |
+        Pattern detected: User has rescheduled last 4 Friday afternoon meetings
+    assert:
+      - type: llm-rubric
+        value: "Response either warns about the Friday afternoon pattern or suggests a better time"
+
+  # Stale follow-up detection
+  - description: "Flag overdue follow-up"
+    vars:
+      input: "Anything I should know about?"
+      context: |
+        Stale items:
+        - Email to Acme sent 5 days ago, no response
+        - Waiting for budget from Sarah, 3 days overdue
+    assert:
+      - type: contains-any
+        value: ["Acme", "Sarah", "follow up", "waiting", "overdue"]
+      - type: llm-rubric
+        value: "Response proactively surfaces the stale items and offers to take action"
+
+  # Evening wrap-up
+  - description: "End of day summary"
+    vars:
+      input: "Wrap up my day"
+      context: |
+        Completed today:
+        - 4 meetings
+        - Sent proposal to client
+        - Reviewed Sarah's doc
+        Not completed:
+        - Reply to Tom (moved to tomorrow)
+        Tomorrow:
+        - Light morning, heavy afternoon
+    assert:
+      - type: llm-rubric
+        value: "Response summarizes what got done, acknowledges what moved, and previews tomorrow"
+      - type: contains-any
+        value: ["completed", "tomorrow", "Tom"]
+
+  # Commitment follow-through
+  - description: "Remind about commitment"
+    vars:
+      input: "Good morning"
+      context: |
+        Commitment due today: Send venue shortlist by end of day
+    assert:
+      - type: llm-rubric
+        value: "Response includes a reminder about the venue shortlist commitment"
+      - type: contains-any
+        value: ["venue", "shortlist", "today", "committed"]

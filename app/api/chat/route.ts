@@ -1,0 +1,147 @@
+import { NextRequest, NextResponse } from "next/server";
+import { getSupabaseAndUser } from "@/lib/api-auth";
+import { assembleContext, formatContextBlock } from "@/lib/context";
+import { resolveLLMConfig, completeWithTools } from "@/lib/llm-client";
+import { executeTool } from "@/lib/tool-execution";
+
+export const runtime = "nodejs";
+
+export async function POST(request: NextRequest) {
+  const auth = await getSupabaseAndUser();
+  if ("response" in auth) return auth.response;
+
+  const body = await request.json().catch(() => ({}));
+  const messages = (body.messages ?? []) as Array<{ role: string; content: string }>;
+  const sessionId = typeof body.sessionId === "string" ? body.sessionId : null;
+
+  const { supabase, user } = auth;
+
+  const config = await resolveLLMConfig(supabase, user.id);
+  if (!config) {
+    return NextResponse.json(
+      { error: "LLM not configured. Set up your AI in onboarding or settings." },
+      { status: 400 }
+    );
+  }
+
+  let sid = sessionId;
+  if (!sid) {
+    const { data: newSession, error: createError } = await supabase
+      .from("chat_sessions")
+      .insert({
+        user_id: user.id,
+        session_type: "in_app",
+        channel: "web",
+        messages: [],
+        status: "active",
+      })
+      .select("id")
+      .single();
+    if (createError) return NextResponse.json({ error: createError.message }, { status: 400 });
+    sid = newSession?.id ?? null;
+  } else {
+    const { data: existing } = await supabase
+      .from("chat_sessions")
+      .select("id")
+      .eq("id", sid)
+      .eq("user_id", user.id)
+      .single();
+    if (!existing) return NextResponse.json({ error: "Session not found" }, { status: 404 });
+  }
+
+  const pkg = await assembleContext(supabase, user.id);
+  const contextBlock = formatContextBlock(pkg);
+  const system =
+    `You are Jacq, a thoughtful PA that learns about the user and helps with tasks. Use the context below to personalise your replies. When the user tells you something about themselves, their preferences, or someone they know, use the appropriate tool to save it.\n\n${contextBlock}`;
+
+  const apiMessages = messages.map((m) => ({
+    role: m.role as "user" | "assistant",
+    content: typeof m.content === "string" ? m.content : "",
+  }));
+
+  const start = Date.now();
+  let usage: { prompt_tokens?: number; completion_tokens?: number } = {};
+  let content = "";
+  let toolCalls: Array<{ id: string; name: string; input: Record<string, unknown> }> = [];
+
+  try {
+    const result = await completeWithTools(config, system, apiMessages);
+    content = result.content;
+    toolCalls = result.toolCalls;
+    usage = result.usage ?? {};
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "LLM request failed";
+    return NextResponse.json({ error: message }, { status: 502 });
+  }
+
+  const latencyMs = Date.now() - start;
+
+  const toolsCalled: string[] = [];
+  const toolResults: Array<{ type: string; tool: string; label?: string; section?: string; ok?: boolean; reason?: string }> = [];
+
+  for (const tc of toolCalls) {
+    toolsCalled.push(tc.name);
+    const result = await executeTool(supabase, user.id, sid, tc.name, tc.input);
+    if (result.ok && result.tool === "extract_understanding") {
+      toolResults.push({
+        type: "tool_result",
+        tool: result.tool,
+        label: result.label,
+        section: result.section,
+      });
+    } else if (result.ok) {
+      toolResults.push({ type: "tool_result", tool: result.tool });
+    } else {
+      toolResults.push({ type: "tool_result", tool: result.tool, ok: false, reason: result.reason ?? "Tool failed" });
+    }
+  }
+
+  await supabase.from("llm_routing_log").insert({
+    user_id: user.id,
+    session_id: sid,
+    provider: config.provider,
+    model: config.model,
+    prompt_tokens: usage.prompt_tokens ?? null,
+    completion_tokens: usage.completion_tokens ?? null,
+    latency_ms: latencyMs,
+    tools_called: toolsCalled.length ? toolsCalled : null,
+  });
+
+  const newMessages = [
+    ...messages.map((m) => ({ role: m.role, content: m.content })),
+    {
+      role: "assistant" as const,
+      content,
+      tool_calls: toolCalls.length ? toolCalls : undefined,
+    },
+  ];
+  await supabase
+    .from("chat_sessions")
+    .update({
+      messages: newMessages,
+      last_message_at: new Date().toISOString(),
+    })
+    .eq("id", sid)
+    .eq("user_id", user.id);
+
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream({
+    start(controller) {
+      for (const tr of toolResults) {
+        controller.enqueue(encoder.encode(JSON.stringify(tr) + "\n"));
+      }
+      if (content) {
+        controller.enqueue(encoder.encode(JSON.stringify({ type: "content", text: content }) + "\n"));
+      }
+      controller.enqueue(encoder.encode(JSON.stringify({ type: "done", sessionId: sid }) + "\n"));
+      controller.close();
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "application/x-ndjson",
+      "Cache-Control": "no-store",
+    },
+  });
+}
