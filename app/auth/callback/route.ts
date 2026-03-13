@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { encryptApiKey } from "@/lib/llm-encrypt";
 import { NextResponse } from "next/server";
 
 const GOOGLE_INTEGRATION_PROVIDERS = ["gmail", "calendar", "drive"] as const;
@@ -36,6 +37,16 @@ export async function GET(request: Request) {
       );
     }
 
+    // Capture Google provider tokens for API access
+    const providerToken = data.session.provider_token;
+    const providerRefreshToken = data.session.provider_refresh_token;
+
+    const encryptedAccess = providerToken ? encryptApiKey(userId, providerToken) : null;
+    const encryptedRefresh = providerRefreshToken ? encryptApiKey(userId, providerRefreshToken) : null;
+    const tokenExpiry = providerToken
+      ? new Date(Date.now() + 3500 * 1000).toISOString()
+      : null;
+
     const now = new Date().toISOString();
     for (const provider of GOOGLE_INTEGRATION_PROVIDERS) {
       await supabase.from("user_integrations").upsert(
@@ -44,6 +55,9 @@ export async function GET(request: Request) {
           provider,
           status: "active",
           connected_at: now,
+          ...(encryptedAccess && { access_token: encryptedAccess }),
+          ...(encryptedRefresh && { refresh_token: encryptedRefresh }),
+          ...(tokenExpiry && { token_expiry: tokenExpiry }),
         },
         { onConflict: "user_id,provider" }
       );

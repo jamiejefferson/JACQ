@@ -19,6 +19,7 @@ export default function OnboardingConnectPage() {
         options: {
           scopes: "email profile https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/calendar",
           redirectTo: `${origin}/auth/callback?next=/onboarding/connect/complete`,
+          queryParams: { access_type: "offline", prompt: "consent" },
         },
       });
       if (error) {

@@ -7,6 +7,7 @@ import { SectionLabel } from "@/components/ui/section-label";
 import { JBubble } from "@/components/ui/j-bubble";
 import { LogoutSection } from "./logout-section";
 import { createClient } from "@/lib/supabase/client";
+import { getProactivityChecks, type ProactivityCheck } from "@/lib/proactivity";
 
 type SettingsRow = {
   k: string;
@@ -62,6 +63,8 @@ export default function SettingsPage() {
   const [telegramSetupSaving, setTelegramSetupSaving] = useState(false);
   const [registerWebhookLoading, setRegisterWebhookLoading] = useState(false);
   const [registerWebhookMessage, setRegisterWebhookMessage] = useState<string | null>(null);
+  const [proactivityChecks, setProactivityChecks] = useState<ProactivityCheck[]>([]);
+  const [proactivitySaving, setProactivitySaving] = useState(false);
   const { data: integrations = {}, refetch: refetchIntegrations } = useQuery({ queryKey: ["integrations"], queryFn: fetchIntegrations });
   const { data: telegramStatus = { configured: false }, refetch: refetchTelegramStatus } = useQuery({
     queryKey: ["telegram-status"],
@@ -86,6 +89,31 @@ export default function SettingsPage() {
   };
   const quietHours = (prefs.quiet_hours ?? { start: "08:00", end: "20:00", weekends: "off" }) as Record<string, string>;
 
+  useEffect(() => {
+    setProactivityChecks(getProactivityChecks(prefs));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- prefs is derived from me; we only want to sync when server preferences change
+  }, [me?.preferences]);
+
+  const updateProactivityCheck = (id: string, patch: Partial<ProactivityCheck>) => {
+    setProactivityChecks((prev) =>
+      prev.map((c) => (c.id === id ? { ...c, ...patch } : c))
+    );
+  };
+
+  async function saveProactivityChecks() {
+    setProactivitySaving(true);
+    try {
+      const res = await fetch("/api/users/preferences", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ proactivity_checks: proactivityChecks }),
+      });
+      if (res.ok) queryClient.invalidateQueries({ queryKey: ["users", "me"] });
+    } finally {
+      setProactivitySaving(false);
+    }
+  }
+
   const intStatus = (provider: string) => (integrations[provider]?.status === "active" ? "Connected" : "Not connected");
   const intColor = (provider: string) => (integrations[provider]?.status === "active" ? "green" : "t3");
 
@@ -99,6 +127,7 @@ export default function SettingsPage() {
         options: {
           scopes: "email profile https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/calendar",
           redirectTo: `${origin}/auth/callback?next=/app/settings`,
+          queryParams: { access_type: "offline", prompt: "consent" },
         },
       });
       if (error) {
@@ -260,6 +289,12 @@ export default function SettingsPage() {
       ],
     },
     {
+      label: "Proactivity",
+      rows: [
+        { k: "Check-in times", v: "Edit below", c: "t2" },
+      ],
+    },
+    {
       label: "Performance & feedback",
       rows: [
         { k: "Weekly review", v: "Every Friday, 17:00", arrow: true },
@@ -306,45 +341,85 @@ export default function SettingsPage() {
         <div key={grp.label}>
           <SectionLabel>{grp.label}</SectionLabel>
           <div className="mx-4 mb-1 bg-jacq-surf rounded-[14px] border border-jacq-bord overflow-hidden">
-            {grp.rows.map((row, i) => (
-              <div key={row.k}>
-                <div className="py-2.5 px-3.5 flex items-center justify-between">
-                  <span className={`text-[13px] ${row.danger ? "text-jacq-red" : "text-jacq-t1"}`}>{row.k}</span>
-                  <div className="flex items-center gap-1.5">
-                    {row.v && (
-                      <span
-                        className={`text-[12px] ${
-                          row.c === "green" ? "text-jacq-green" : row.c === "t3" ? "text-jacq-t3" : "text-jacq-t2"
-                        } ${row.mono ? "font-dm-mono" : ""}`}
-                      >
-                        {row.v}
-                      </span>
-                    )}
-                    {row.action && (
-                      <button
-                        type="button"
-                        onClick={row.onAction}
-                        className={`text-[12px] font-semibold cursor-pointer ${row.danger ? "text-jacq-red" : "text-jacq-gold"}`}
-                      >
-                        {row.action}
-                      </button>
-                    )}
-                    {row.toggle && (
-                      <div className="w-10 h-6 rounded-xl bg-jacq-surf2 border border-jacq-bord relative">
-                        <div className="w-[18px] h-5 rounded-full bg-jacq-t3 absolute top-0.5 left-0.5" />
+            {grp.label === "Proactivity" ? (
+              <div className="p-3.5">
+                <p className="text-[12px] text-jacq-t3 mb-3">Jacq checks in via Telegram at these times (tasks, commitments). Edit times or turn slots off.</p>
+                {proactivityChecks.length === 0 ? (
+                  <p className="text-[12px] text-jacq-t3">Loading…</p>
+                ) : (
+                  <>
+                    {proactivityChecks.map((c) => (
+                      <div key={c.id} className="flex items-center gap-3 py-2">
+                        <span className="text-[13px] text-jacq-t1 w-28">{c.label}</span>
+                        <input
+                          type="time"
+                          value={c.time}
+                          onChange={(e) => updateProactivityCheck(c.id, { time: e.target.value })}
+                          className="h-9 rounded-lg border border-jacq-bord bg-jacq-surf2 px-2 text-[13px] text-jacq-t1 font-dm-mono"
+                        />
+                        <label className="flex items-center gap-1.5 text-[12px] text-jacq-t2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={c.enabled}
+                            onChange={(e) => updateProactivityCheck(c.id, { enabled: e.target.checked })}
+                            className="rounded border-jacq-bord"
+                          />
+                          On
+                        </label>
                       </div>
-                    )}
-                    {row.arrow && (
-                      <svg viewBox="0 0 24 24" width={14} height={14} className="fill-jacq-t3">
-                        <path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z" />
-                      </svg>
-                    )}
-                    {!row.danger && <JBubble />}
-                  </div>
-                </div>
-                {i < grp.rows.length - 1 && <div className="h-px bg-jacq-bord2 mx-3.5" />}
+                    ))}
+                    <button
+                      type="button"
+                      onClick={saveProactivityChecks}
+                      disabled={proactivitySaving}
+                      className="mt-2 py-2 px-3 rounded-xl bg-jacq-gold text-jacq-t1 text-[13px] font-semibold cursor-pointer disabled:opacity-50"
+                    >
+                      {proactivitySaving ? "Saving…" : "Save"}
+                    </button>
+                  </>
+                )}
               </div>
-            ))}
+            ) : (
+              grp.rows.map((row, i) => (
+                <div key={row.k}>
+                  <div className="py-2.5 px-3.5 flex items-center justify-between">
+                    <span className={`text-[13px] ${row.danger ? "text-jacq-red" : "text-jacq-t1"}`}>{row.k}</span>
+                    <div className="flex items-center gap-1.5">
+                      {row.v && (
+                        <span
+                          className={`text-[12px] ${
+                            row.c === "green" ? "text-jacq-green" : row.c === "t3" ? "text-jacq-t3" : "text-jacq-t2"
+                          } ${row.mono ? "font-dm-mono" : ""}`}
+                        >
+                          {row.v}
+                        </span>
+                      )}
+                      {row.action && (
+                        <button
+                          type="button"
+                          onClick={row.onAction}
+                          className={`text-[12px] font-semibold cursor-pointer ${row.danger ? "text-jacq-red" : "text-jacq-gold"}`}
+                        >
+                          {row.action}
+                        </button>
+                      )}
+                      {row.toggle && (
+                        <div className="w-10 h-6 rounded-xl bg-jacq-surf2 border border-jacq-bord relative">
+                          <div className="w-[18px] h-5 rounded-full bg-jacq-t3 absolute top-0.5 left-0.5" />
+                        </div>
+                      )}
+                      {row.arrow && (
+                        <svg viewBox="0 0 24 24" width={14} height={14} className="fill-jacq-t3">
+                          <path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z" />
+                        </svg>
+                      )}
+                      {!row.danger && <JBubble />}
+                    </div>
+                  </div>
+                  {i < grp.rows.length - 1 && <div className="h-px bg-jacq-bord2 mx-3.5" />}
+                </div>
+              ))
+            )}
           </div>
         </div>
       ))}
