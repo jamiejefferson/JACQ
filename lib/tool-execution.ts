@@ -282,13 +282,18 @@ export async function executeTool(
         path += `&q=${encodeURIComponent(args.query.trim())}`;
       }
 
+      console.log(`[calendar_list_events] timeMin=${timeMin} timeMax=${timeMax} token=${accessToken.slice(0, 10)}...`);
+
       const res = await googleCalendarFetch(accessToken, path);
       if (!res.ok) {
         const err = await res.text();
+        console.error(`[calendar_list_events] API error ${res.status}: ${err}`);
         return { ok: false, tool: toolName, reason: `Calendar API error: ${err}` };
       }
 
-      const body = (await res.json()) as { items?: Array<Record<string, unknown>> };
+      const body = (await res.json()) as { items?: Array<Record<string, unknown>>; summary?: string };
+      console.log(`[calendar_list_events] Calendar: ${body.summary ?? "unknown"}, events: ${body.items?.length ?? 0}`);
+
       const events = (body.items ?? []).map((e) => {
         const start = (e.start as Record<string, string>)?.dateTime ?? (e.start as Record<string, string>)?.date ?? "";
         const end = (e.end as Record<string, string>)?.dateTime ?? (e.end as Record<string, string>)?.date ?? "";
@@ -334,16 +339,29 @@ export async function executeTool(
       const endTime = typeof args.end_time === "string" ? args.end_time : "";
       if (!summary || !startTime || !endTime) return { ok: false, tool: toolName, reason: "summary, start_time, and end_time are required" };
 
+      // Get the calendar's timezone so events are created in the right zone
+      let calendarTimeZone = "Europe/London";
+      try {
+        const calRes = await googleCalendarFetch(accessToken, "/calendars/primary");
+        if (calRes.ok) {
+          const calData = (await calRes.json()) as { timeZone?: string };
+          if (calData.timeZone) calendarTimeZone = calData.timeZone;
+        }
+      } catch { /* use default */ }
+
       const event: Record<string, unknown> = {
         summary,
-        start: { dateTime: startTime },
-        end: { dateTime: endTime },
+        start: { dateTime: startTime, timeZone: calendarTimeZone },
+        end: { dateTime: endTime, timeZone: calendarTimeZone },
       };
       if (typeof args.description === "string") event.description = args.description;
       if (typeof args.location === "string") event.location = args.location;
       if (Array.isArray(args.attendees)) {
         event.attendees = (args.attendees as string[]).map((email) => ({ email }));
       }
+
+      console.log(`[calendar_create_event] Creating: ${summary} | ${startTime} - ${endTime} | tz: ${calendarTimeZone}`);
+      console.log(`[calendar_create_event] Event body: ${JSON.stringify(event)}`);
 
       const res = await googleCalendarFetch(accessToken, "/calendars/primary/events", {
         method: "POST",
@@ -352,11 +370,13 @@ export async function executeTool(
 
       if (!res.ok) {
         const err = await res.text();
+        console.error(`[calendar_create_event] API error ${res.status}: ${err}`);
         return { ok: false, tool: toolName, reason: `Calendar API error: ${err}` };
       }
 
-      const created = (await res.json()) as { id: string; htmlLink: string; summary: string };
-      return { ok: true, tool: toolName, data: `Event created: "${created.summary}" [id:${created.id}]` };
+      const created = (await res.json()) as { id: string; htmlLink: string; summary: string; status: string };
+      console.log(`[calendar_create_event] Created: id=${created.id} status=${created.status} link=${created.htmlLink}`);
+      return { ok: true, tool: toolName, data: `Event created: "${created.summary}" [id:${created.id}] link:${created.htmlLink}` };
     }
 
     if (toolName === "calendar_update_event") {
