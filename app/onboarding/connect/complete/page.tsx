@@ -12,7 +12,7 @@ export default function OnboardingConnectCompletePage() {
       try {
         const supabase = createClient();
         await supabase.auth.updateUser({ data: { onboarding_complete: true } });
-        await fetch("/api/users/me"); // ensure users row exists and can be updated
+        await fetch("/api/onboarding/complete", { method: "POST" });
       } catch {
         // no-op
       }

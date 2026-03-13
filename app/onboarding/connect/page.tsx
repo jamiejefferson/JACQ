@@ -17,7 +17,7 @@ export default function OnboardingConnectPage() {
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
-          scopes: "email profile https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.compose https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/tasks",
+          scopes: "email profile https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.compose https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/tasks",
           redirectTo: `${origin}/auth/callback?next=/onboarding/connect/complete`,
           queryParams: { access_type: "offline", prompt: "consent" },
         },
@@ -40,6 +40,7 @@ export default function OnboardingConnectPage() {
     try {
       const supabase = createClient();
       await supabase.auth.updateUser({ data: { integration_deferred: true, onboarding_complete: true } });
+      await fetch("/api/onboarding/complete", { method: "POST" });
     } catch {
       // no-op
     }
