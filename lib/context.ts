@@ -120,6 +120,11 @@ export async function assembleContext(
 export function formatContextBlock(pkg: ContextPackage): string {
   const lines: string[] = [];
 
+  const now = new Date();
+  lines.push(`## Current date and time`);
+  lines.push(`Today is ${now.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}. Current time (UTC): ${now.toISOString()}.`);
+  lines.push(`IMPORTANT: When creating calendar events or referencing dates, use the year ${now.getFullYear()}.`);
+
   lines.push(`## Current understanding of ${pkg.user.name ?? "you"}`);
   for (const section of SECTION_ORDER) {
     const entries = pkg.understanding[section] ?? [];
