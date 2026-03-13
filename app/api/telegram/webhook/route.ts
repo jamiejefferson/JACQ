@@ -165,17 +165,18 @@ async function handleChatMessage(
   // If the LLM used tools, execute them and do a follow-up call for a text reply
   if (result.toolCalls.length > 0) {
     const toolResults: Array<{ tool_use_id: string; result: string }> = [];
+    let hasDataResults = false;
     for (const tc of result.toolCalls) {
       const toolResult = await executeTool(supabase, userId, sessionId, tc.name, tc.input);
-      toolResults.push({
-        tool_use_id: tc.id,
-        result: toolResult.ok ? `Done: ${tc.name}` : `Failed: ${toolResult.reason ?? "unknown error"}`,
-      });
+      const resultText = toolResult.ok
+        ? (toolResult.data ?? `Done: ${tc.name}`)
+        : `Failed: ${toolResult.reason ?? "unknown error"}`;
+      toolResults.push({ tool_use_id: tc.id, result: resultText });
+      if (toolResult.ok && toolResult.data) hasDataResults = true;
     }
 
-    // If no text content, do a follow-up call with tool results so the model can respond
-    if (!content) {
-      // Build the full message sequence for the follow-up
+    // Do a follow-up call with tool results so the model can respond with the data
+    if (!content || hasDataResults) {
       const followUpMessages = [
         ...apiMessages,
         {
@@ -201,7 +202,10 @@ async function handleChatMessage(
         const followUp = await completeWithToolsRaw(config, system, followUpMessages);
         content = followUp.content;
       } catch {
-        content = "Done! I've saved that.";
+        // Fall back to raw data or generic message
+        content = hasDataResults
+          ? toolResults.map((tr) => tr.result).join("\n")
+          : "Done! I've saved that.";
       }
     }
   }

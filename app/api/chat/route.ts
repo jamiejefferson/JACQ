@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAndUser } from "@/lib/api-auth";
 import { assembleContext, formatContextBlock } from "@/lib/context";
-import { resolveLLMConfig, completeWithTools } from "@/lib/llm-client";
+import { resolveLLMConfig, completeWithTools, completeWithToolsRaw } from "@/lib/llm-client";
 import { buildSystemPrompt } from "@/lib/system-prompt";
 import { executeTool } from "@/lib/tool-execution";
 
@@ -78,10 +78,20 @@ export async function POST(request: NextRequest) {
 
   const toolsCalled: string[] = [];
   const toolResults: Array<{ type: string; tool: string; label?: string; section?: string; ok?: boolean; reason?: string }> = [];
+  const executedTools: Array<{ id: string; name: string; input: Record<string, unknown>; resultText: string }> = [];
+  let hasDataResults = false;
 
   for (const tc of toolCalls) {
     toolsCalled.push(tc.name);
     const result = await executeTool(supabase, user.id, sid, tc.name, tc.input);
+
+    const resultText = result.ok
+      ? (result.data ?? `Done: ${tc.name}`)
+      : `Failed: ${result.reason ?? "unknown error"}`;
+    executedTools.push({ id: tc.id, name: tc.name, input: tc.input, resultText });
+
+    if (result.ok && result.data) hasDataResults = true;
+
     if (result.ok && result.tool === "extract_understanding") {
       toolResults.push({
         type: "tool_result",
@@ -93,6 +103,47 @@ export async function POST(request: NextRequest) {
       toolResults.push({ type: "tool_result", tool: result.tool });
     } else {
       toolResults.push({ type: "tool_result", tool: result.tool, ok: false, reason: result.reason ?? "Tool failed" });
+    }
+  }
+
+  // If any tools returned data (e.g. calendar events), do a follow-up LLM call
+  // so the model can format the data into a user-facing reply
+  if (executedTools.length > 0 && (hasDataResults || !content)) {
+    const followUpMessages = [
+      ...apiMessages.map((m) => ({ role: m.role, content: m.content as unknown })),
+      {
+        role: "assistant" as const,
+        content: toolCalls.map((tc) => ({
+          type: "tool_use" as const,
+          id: tc.id,
+          name: tc.name,
+          input: tc.input,
+        })) as unknown,
+      },
+      {
+        role: "user" as const,
+        content: executedTools.map((et) => ({
+          type: "tool_result" as const,
+          tool_use_id: et.id,
+          content: et.resultText,
+        })) as unknown,
+      },
+    ];
+
+    try {
+      const followUp = await completeWithToolsRaw(config, system, followUpMessages);
+      content = followUp.content;
+      if (followUp.usage) {
+        usage = {
+          prompt_tokens: (usage.prompt_tokens ?? 0) + (followUp.usage.prompt_tokens ?? 0),
+          completion_tokens: (usage.completion_tokens ?? 0) + (followUp.usage.completion_tokens ?? 0),
+        };
+      }
+    } catch {
+      // Fall back to raw data if the follow-up call fails
+      if (!content) {
+        content = executedTools.map((et) => et.resultText).join("\n");
+      }
     }
   }
 

@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { ToolName } from "./llm-tools";
+import { getGoogleAccessToken, googleCalendarFetch } from "./google-client";
 
 const SECTIONS = ["about_me", "communication", "calendar_time", "working_style"] as const;
 
@@ -29,7 +30,9 @@ function setByPath(obj: Record<string, unknown>, path: string, value: unknown): 
   return out;
 }
 
-export type ToolResult = { ok: true; tool: string; label?: string; section?: string } | { ok: false; tool: string; reason: string };
+export type ToolResult =
+  | { ok: true; tool: string; label?: string; section?: string; data?: string }
+  | { ok: false; tool: string; reason: string };
 
 export async function executeTool(
   supabase: SupabaseClient,
@@ -261,6 +264,127 @@ export async function executeTool(
         status: "pending",
       });
       return { ok: true, tool: toolName };
+    }
+
+    // --- Calendar tools ---
+
+    if (toolName === "calendar_list_events") {
+      const accessToken = await getGoogleAccessToken(supabase, userId, "calendar");
+      if (!accessToken) return { ok: false, tool: toolName, reason: "Google Calendar not connected. Ask the user to reconnect Google in Settings." };
+
+      const daysAhead = typeof args.days_ahead === "number" ? args.days_ahead : 7;
+      const now = new Date();
+      const timeMin = now.toISOString();
+      const timeMax = new Date(now.getTime() + daysAhead * 86400000).toISOString();
+
+      let path = `/calendars/primary/events?timeMin=${encodeURIComponent(timeMin)}&timeMax=${encodeURIComponent(timeMax)}&singleEvents=true&orderBy=startTime&maxResults=50`;
+      if (typeof args.query === "string" && args.query.trim()) {
+        path += `&q=${encodeURIComponent(args.query.trim())}`;
+      }
+
+      const res = await googleCalendarFetch(accessToken, path);
+      if (!res.ok) {
+        const err = await res.text();
+        return { ok: false, tool: toolName, reason: `Calendar API error: ${err}` };
+      }
+
+      const body = (await res.json()) as { items?: Array<Record<string, unknown>> };
+      const events = (body.items ?? []).map((e) => {
+        const start = (e.start as Record<string, string>)?.dateTime ?? (e.start as Record<string, string>)?.date ?? "";
+        const end = (e.end as Record<string, string>)?.dateTime ?? (e.end as Record<string, string>)?.date ?? "";
+        return {
+          id: e.id,
+          summary: e.summary ?? "(No title)",
+          start,
+          end,
+          location: e.location ?? null,
+          description: e.description ? String(e.description).slice(0, 200) : null,
+          attendees: Array.isArray(e.attendees) ? (e.attendees as Array<{ email?: string }>).map((a) => a.email).filter(Boolean) : [],
+        };
+      });
+
+      if (events.length === 0) {
+        return { ok: true, tool: toolName, data: `No events found in the next ${daysAhead} day(s).` };
+      }
+
+      const formatted = events
+        .map((e) => {
+          const startDate = new Date(e.start);
+          const endDate = new Date(e.end);
+          const dateStr = startDate.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
+          const timeStr = e.start.includes("T")
+            ? `${startDate.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}–${endDate.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}`
+            : "All day";
+          const parts = [`${dateStr}, ${timeStr}: ${e.summary} [id:${e.id}]`];
+          if (e.location) parts.push(`  Location: ${e.location}`);
+          if (e.attendees.length) parts.push(`  Attendees: ${e.attendees.join(", ")}`);
+          return parts.join("\n");
+        })
+        .join("\n");
+
+      return { ok: true, tool: toolName, data: `${events.length} event(s) in the next ${daysAhead} day(s):\n${formatted}` };
+    }
+
+    if (toolName === "calendar_create_event") {
+      const accessToken = await getGoogleAccessToken(supabase, userId, "calendar");
+      if (!accessToken) return { ok: false, tool: toolName, reason: "Google Calendar not connected. Ask the user to reconnect Google in Settings." };
+
+      const summary = typeof args.summary === "string" ? args.summary.trim() : "";
+      const startTime = typeof args.start_time === "string" ? args.start_time : "";
+      const endTime = typeof args.end_time === "string" ? args.end_time : "";
+      if (!summary || !startTime || !endTime) return { ok: false, tool: toolName, reason: "summary, start_time, and end_time are required" };
+
+      const event: Record<string, unknown> = {
+        summary,
+        start: { dateTime: startTime },
+        end: { dateTime: endTime },
+      };
+      if (typeof args.description === "string") event.description = args.description;
+      if (typeof args.location === "string") event.location = args.location;
+      if (Array.isArray(args.attendees)) {
+        event.attendees = (args.attendees as string[]).map((email) => ({ email }));
+      }
+
+      const res = await googleCalendarFetch(accessToken, "/calendars/primary/events", {
+        method: "POST",
+        body: JSON.stringify(event),
+      });
+
+      if (!res.ok) {
+        const err = await res.text();
+        return { ok: false, tool: toolName, reason: `Calendar API error: ${err}` };
+      }
+
+      const created = (await res.json()) as { id: string; htmlLink: string; summary: string };
+      return { ok: true, tool: toolName, data: `Event created: "${created.summary}" [id:${created.id}]` };
+    }
+
+    if (toolName === "calendar_update_event") {
+      const accessToken = await getGoogleAccessToken(supabase, userId, "calendar");
+      if (!accessToken) return { ok: false, tool: toolName, reason: "Google Calendar not connected. Ask the user to reconnect Google in Settings." };
+
+      const eventId = typeof args.event_id === "string" ? args.event_id.trim() : "";
+      if (!eventId) return { ok: false, tool: toolName, reason: "event_id is required" };
+
+      const patch: Record<string, unknown> = {};
+      if (typeof args.summary === "string") patch.summary = args.summary;
+      if (typeof args.start_time === "string") patch.start = { dateTime: args.start_time };
+      if (typeof args.end_time === "string") patch.end = { dateTime: args.end_time };
+      if (typeof args.description === "string") patch.description = args.description;
+      if (typeof args.location === "string") patch.location = args.location;
+
+      const res = await googleCalendarFetch(accessToken, `/calendars/primary/events/${encodeURIComponent(eventId)}`, {
+        method: "PATCH",
+        body: JSON.stringify(patch),
+      });
+
+      if (!res.ok) {
+        const err = await res.text();
+        return { ok: false, tool: toolName, reason: `Calendar API error: ${err}` };
+      }
+
+      const updated = (await res.json()) as { id: string; summary: string };
+      return { ok: true, tool: toolName, data: `Event updated: "${updated.summary}" [id:${updated.id}]` };
     }
 
     return { ok: false, tool: toolName, reason: "unknown tool" };

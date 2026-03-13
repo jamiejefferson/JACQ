@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { decryptApiKey } from "./llm-encrypt";
-import { EXTRACTION_TOOLS } from "./llm-tools";
+import { ALL_TOOLS } from "./llm-tools";
 
 export type LLMResolvedConfig = {
   provider: string;
@@ -52,7 +52,7 @@ export async function resolveLLMConfig(
 
 /** Anthropic tool format for Messages API */
 function anthropicTools() {
-  return EXTRACTION_TOOLS.map((t) => ({
+  return ALL_TOOLS.map((t) => ({
     name: t.name,
     description: t.description,
     input_schema: t.input_schema,

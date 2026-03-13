@@ -7,7 +7,7 @@ export const EXTRACTION_TOOLS = [
   {
     name: "extract_understanding",
     description:
-      "Save something you have learned about the user to their Understanding. Call whenever the user tells you something meaningful about how they work, what they prefer, or who they are.",
+      "Save something you learned about the user to their Understanding. Call whenever the user shares a fact, preference, or detail about themselves—even in passing (e.g. 'I'm usually free after 3', 'I hate long meetings', 'I work from home on Fridays'). Use the section that best fits: about_me, communication, calendar_time, working_style. If in doubt, use about_me or working_style. Prefer calling this and then replying briefly over replying without saving.",
     input_schema: schemaObject({
       section: {
         type: "string",
@@ -70,7 +70,7 @@ export const EXTRACTION_TOOLS = [
   },
   {
     name: "create_task",
-    description: "Create a task when the user asks you to do something or an action item is identified.",
+    description: "Create a task when the user asks you to do something, mentions something they need to do, or when an action item comes out of the conversation. Call this whenever there is a concrete to-do; do not only reply in text.",
     input_schema: schemaObject({
       title: { type: "string" },
       source: { type: "string" },
@@ -100,7 +100,47 @@ export const EXTRACTION_TOOLS = [
   },
 ] as const;
 
-export type ToolName = (typeof EXTRACTION_TOOLS)[number]["name"];
+export const CALENDAR_TOOLS = [
+  {
+    name: "calendar_list_events",
+    description:
+      "List upcoming events from the user's Google Calendar. Use this when the user asks about their schedule, what's coming up, or anything calendar-related. You can read calendar events without asking for permission first.",
+    input_schema: schemaObject({
+      days_ahead: { type: "number", description: "Number of days to look ahead. Default 7." },
+      query: { type: "string", description: "Optional text filter to match event titles." },
+    }),
+  },
+  {
+    name: "calendar_create_event",
+    description:
+      "Create a new event on the user's Google Calendar. ALWAYS confirm the details with the user before calling this tool.",
+    input_schema: schemaObject({
+      summary: { type: "string", description: "Event title." },
+      start_time: { type: "string", description: "ISO 8601 datetime for event start." },
+      end_time: { type: "string", description: "ISO 8601 datetime for event end." },
+      description: { type: "string", description: "Optional event description/notes." },
+      attendees: { type: "array", items: { type: "string" }, description: "Optional list of email addresses to invite." },
+      location: { type: "string", description: "Optional location." },
+    }),
+  },
+  {
+    name: "calendar_update_event",
+    description:
+      "Update an existing event on the user's Google Calendar. ALWAYS confirm the changes with the user before calling this tool.",
+    input_schema: schemaObject({
+      event_id: { type: "string", description: "The Google Calendar event ID to update." },
+      summary: { type: "string", description: "New event title (optional)." },
+      start_time: { type: "string", description: "New start time in ISO 8601 (optional)." },
+      end_time: { type: "string", description: "New end time in ISO 8601 (optional)." },
+      description: { type: "string", description: "New description (optional)." },
+      location: { type: "string", description: "New location (optional)." },
+    }),
+  },
+] as const;
+
+export const ALL_TOOLS = [...EXTRACTION_TOOLS, ...CALENDAR_TOOLS];
+
+export type ToolName = (typeof ALL_TOOLS)[number]["name"];
 
 const ONBOARDING_TOOL_NAMES = ["extract_understanding", "extract_contact", "extract_communication_style"] as const;
 

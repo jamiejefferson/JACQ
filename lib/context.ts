@@ -12,6 +12,7 @@ export type ContextPackage = {
   active_commitments: { id: string; description: string; due_at: string | null; status: string }[];
   recent_actions: { id: string; description: string; action_type: string; created_at: string }[];
   communication_profile: Record<string, unknown> | null;
+  integrations: { gmail: string; calendar: string };
   assembled_at: string;
 };
 
@@ -40,6 +41,7 @@ export async function assembleContext(
     commitmentsRes,
     activityRes,
     commProfileRes,
+    integrationsRes,
   ] = await Promise.all([
     supabase.from("users").select("id, email, name, preferences").eq("id", userId).single(),
     supabase
@@ -71,6 +73,11 @@ export async function assembleContext(
       .order("created_at", { ascending: false })
       .limit(50),
     supabase.from("communication_profiles").select("*").eq("user_id", userId).single(),
+    supabase
+      .from("user_integrations")
+      .select("provider, status, access_token")
+      .eq("user_id", userId)
+      .in("provider", ["gmail", "calendar"]),
   ]);
 
   const user = (userRes.data ?? {}) as { id?: string; name?: string; email?: string; preferences?: unknown };
@@ -83,6 +90,16 @@ export async function assembleContext(
   const recent_actions = (activityRes.data ?? []) as { id: string; description: string; action_type: string; created_at: string }[];
   const communication_profile = commProfileRes.data as Record<string, unknown> | null;
 
+  const intRows = (integrationsRes.data ?? []) as Array<{ provider: string; status: string; access_token: string | null }>;
+  const intStatus = (provider: string) => {
+    const row = intRows.find((r) => r.provider === provider);
+    if (!row || row.status !== "active") return "not_connected";
+    if (!row.access_token) return "connected_no_token";
+    if (row.status === "revoked") return "revoked";
+    return "ready";
+  };
+  const integrations = { gmail: intStatus("gmail"), calendar: intStatus("calendar") };
+
   return {
     user: { id: user.id ?? userId, name: user.name, email: user.email },
     preferences,
@@ -93,6 +110,7 @@ export async function assembleContext(
     active_commitments,
     recent_actions,
     communication_profile,
+    integrations,
     assembled_at: new Date().toISOString(),
   };
 }
@@ -143,6 +161,14 @@ export function formatContextBlock(pkg: ContextPackage): string {
   lines.push(`Autonomy level: ${prefs.autonomy_level ?? "balanced"}`);
   lines.push(`Sign-off as PA: ${prefs.signoff_pa ?? "—"}`);
   lines.push(`Language: ${prefs.language ?? "en-GB"}`);
+
+  lines.push("## Integrations");
+  lines.push(`Google Calendar: ${pkg.integrations.calendar === "ready" ? "Connected — calendar tools available" : "Not connected"}`);
+  lines.push(`Gmail: ${pkg.integrations.gmail === "ready" ? "Connected — email tools available" : "Not connected"}`);
+
+  lines.push("");
+  lines.push("---");
+  lines.push("After each user message: save any new facts, preferences, action items, or contacts using the tools (extract_understanding, create_task, extract_contact, update_setting, etc.). Do not skip saving.");
 
   return lines.join("\n");
 }
