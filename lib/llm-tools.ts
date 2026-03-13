@@ -167,6 +167,17 @@ export const GMAIL_TOOLS = [
       cc: { type: "string", description: "Optional CC email address(es), comma-separated." },
     }),
   },
+  {
+    name: "email_send",
+    description:
+      "Send an email directly from the user's Gmail account. You MUST show the user the full email content (to, subject, body, cc if any) and get their explicit confirmation before calling this tool. Never call this without the user's go-ahead.",
+    input_schema: schemaObject({
+      to: { type: "string", description: "Recipient email address." },
+      subject: { type: "string", description: "Email subject line." },
+      body: { type: "string", description: "Email body text." },
+      cc: { type: "string", description: "Optional CC email address(es), comma-separated." },
+    }),
+  },
 ] as const;
 
 export const TASKS_TOOLS = [

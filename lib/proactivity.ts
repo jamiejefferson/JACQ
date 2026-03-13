@@ -96,10 +96,22 @@ export function setProactivityLastRun(
 /** Build a short proactive message for the given slot from context (fallback when LLM is not used). */
 export function buildProactiveMessage(pkg: ContextPackage, slotId: string): string {
   const name = pkg.user.name ?? "there";
-  const lines: string[] = [];
+  const hasTasksOrCommitments = pkg.active_tasks.length > 0 || pkg.active_commitments.length > 0;
 
+  // When nothing to report, keep it conversational — just open the chat (one or two sentences).
+  if (!hasTasksOrCommitments) {
+    if (slotId === "morning") {
+      return `Good morning ${name} — hope you're well. Drop me a line when you're free if you fancy a chat or need anything. 🙂`;
+    }
+    if (slotId === "afternoon") {
+      return `Hey ${name}, hope the day's going well. Here if you need anything or just want to chat. 👍`;
+    }
+    return `End of day ${name}. How did it go? Here if you want to offload or plan for tomorrow.`;
+  }
+
+  const lines: string[] = [];
   if (slotId === "morning") {
-    lines.push(`Good morning ${name}. Just checking in — how's your day shaping up?`);
+    lines.push(`Good morning ${name}. Quick check-in — how's your day shaping up? 🙂`);
   } else if (slotId === "afternoon") {
     lines.push(`Hey ${name}, afternoon check-in. How's it going? Anything I can help with?`);
   } else {
@@ -121,11 +133,7 @@ export function buildProactiveMessage(pkg: ContextPackage, slotId: string): stri
     }
     lines.push("");
   }
-  if (pkg.active_tasks.length === 0 && pkg.active_commitments.length === 0) {
-    lines.push("No tasks or commitments on your list right now. Reply here if you'd like to chat or add something.");
-  } else {
-    lines.push("Reply here if you want to chat or change anything.");
-  }
+  lines.push("Reply here if you want to chat or change anything.");
 
   return lines.join("\n");
 }
@@ -177,9 +185,9 @@ Context: ${contextSummary}
 Instructions:
 - Check in and start a conversation. Ask how they're doing, offer to help.
 - If there are tasks or commitments, mention them briefly (one line) so they know you're on top of it; then invite them to reply.
-- If there's nothing on their list, focus on the check-in: how's it going, can you help with anything, happy to chat.
+- If there's nothing on their list (no tasks, commitments, or insights), do NOT give a briefing or report. Write only a short, casual opener to start a conversation — e.g. "how's the day going?", "fancy a quick chat?", "here if you need anything". One or two sentences max. Do not say "No tasks on your list" or similar.
 - Optionally add one brief, relevant insight — e.g. a headline or trend from the news, something professional or interesting (not sensational). Keep it to one short sentence if you include it.
-- No markdown. Plain text only. British English. Keep the whole message under 120 words. Warm and human, not corporate.`;
+- No markdown. Plain text only. British English. Keep the whole message under 120 words. Warm and human, not corporate. You can use the occasional emoji if it fits (e.g. a wave, thumbs up) — keep it light.`;
 
   try {
     const res = await completeWithTools(

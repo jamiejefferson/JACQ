@@ -125,7 +125,7 @@ export default function SettingsPage() {
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
-          scopes: "email profile https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.compose https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/tasks",
+          scopes: "email profile https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.compose https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/tasks",
           redirectTo: `${origin}/auth/callback?next=/app/settings`,
           queryParams: { access_type: "offline", prompt: "consent" },
         },
@@ -248,9 +248,9 @@ export default function SettingsPage() {
     {
       label: "Integrations",
       rows: [
-        { k: "Gmail", v: intStatus("gmail"), c: intColor("gmail"), action: intStatus("gmail") === "Not connected" ? "Connect" : undefined, onAction: intStatus("gmail") === "Not connected" ? connectGoogle : undefined },
-        { k: "Google Calendar", v: intStatus("calendar"), c: intColor("calendar"), action: intStatus("calendar") === "Not connected" ? "Connect" : undefined, onAction: intStatus("calendar") === "Not connected" ? connectGoogle : undefined },
-        { k: "Google Drive", v: intStatus("drive"), c: intColor("drive"), action: intStatus("drive") === "Not connected" ? "Connect" : undefined, onAction: intStatus("drive") === "Not connected" ? connectGoogle : undefined },
+        { k: "Gmail", v: intStatus("gmail"), c: intColor("gmail"), action: intStatus("gmail") === "Connected" ? "Reconnect" : "Connect", onAction: connectGoogle },
+        { k: "Google Calendar", v: intStatus("calendar"), c: intColor("calendar"), action: intStatus("calendar") === "Connected" ? "Reconnect" : "Connect", onAction: connectGoogle },
+        { k: "Google Drive", v: intStatus("drive"), c: intColor("drive"), action: intStatus("drive") === "Connected" ? "Reconnect" : "Connect", onAction: connectGoogle },
         {
           k: "Telegram",
           v: !telegramStatus.configured ? "Not set up" : intStatus("telegram"),

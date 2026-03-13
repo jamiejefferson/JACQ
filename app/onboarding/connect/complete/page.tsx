@@ -16,7 +16,7 @@ export default function OnboardingConnectCompletePage() {
       } catch {
         // no-op
       }
-      router.replace("/app/home");
+      router.replace("/app");
       router.refresh();
     }
     finish();

@@ -2,13 +2,15 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Mobile-shaped container on desktop: content stays 375px wide, centered, with neutral bands on the sides */
+/* Mobile: full viewport. Desktop (768px+): phone-shaped frame with bezel */
 .mobile-container {
+  min-height: 100dvh;
   min-height: 100vh;
   width: 100%;
+  max-width: none;
 }
 
-@media (min-width: 376px) {
+@media (min-width: 768px) {
   html {
     box-sizing: border-box;
     height: 100%;
@@ -29,6 +31,7 @@
 
   .mobile-container {
     width: 375px;
+    max-width: 375px;
     min-height: 0;
     height: calc(100vh - 40px);
     max-height: calc(100vh - 40px);
@@ -104,8 +107,8 @@
   }
 }
 
-/* Desktop bezel: must win after Tailwind base — 20px band above and below the phone frame */
-@media (min-width: 376px) {
+/* Desktop bezel: 20px band above and below the phone frame (only from 768px up) */
+@media (min-width: 768px) {
   html {
     height: 100%;
   }

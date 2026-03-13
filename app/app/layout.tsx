@@ -9,8 +9,8 @@ import ChatPanel from "@/components/chat-panel";
 import { Toast } from "@/components/toast";
 
 const BURGER_LINKS = [
-  { label: "Home", sub: "What to do next", href: "/app/home" },
-  { label: "Understanding", sub: "Jacq's picture of you", href: "/app" },
+  { label: "Home", sub: "What to do next", href: "/app" },
+  { label: "Understanding", sub: "Jacq's picture of you", href: "/app/understanding" },
   { label: "Tasks", sub: "Jacq's work surface", href: "/app/tasks" },
   { label: "Activity", sub: "Commitments, actions and patterns", href: "/app/activity" },
   { label: "Relationships", sub: "People Jacq knows about", href: "/app/relationships" },
@@ -96,14 +96,14 @@ function BurgerOverlay({ onClose }: { onClose: () => void }) {
 
   return (
     <div
-      className="fixed inset-0 z-[60] flex flex-col items-center bg-black/40 min-[376px]:inset-auto min-[376px]:top-5 min-[376px]:left-1/2 min-[376px]:-translate-x-1/2 min-[376px]:w-[375px] min-[376px]:h-[calc(100vh-40px)] min-[376px]:rounded-[2rem] min-[376px]:overflow-hidden"
+      className="fixed inset-0 z-[60] flex flex-col items-center bg-black/40 min-[768px]:inset-auto min-[768px]:top-5 min-[768px]:left-1/2 min-[768px]:-translate-x-1/2 min-[768px]:w-[375px] min-[768px]:h-[calc(100vh-40px)] min-[768px]:rounded-[2rem] min-[768px]:overflow-hidden"
       style={{ padding: "env(safe-area-inset-top) 0 env(safe-area-inset-bottom)" }}
       role="dialog"
       aria-modal="true"
       aria-label="Menu"
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
-      <div className="w-full max-w-[375px] mx-auto flex-1 flex flex-col bg-jacq-bg rounded-[44px] overflow-hidden shadow-xl min-h-0 min-[376px]:rounded-none min-[376px]:max-w-none" onClick={(e) => e.stopPropagation()}>
+      <div className="w-full max-w-[375px] mx-auto flex-1 flex flex-col bg-jacq-bg rounded-[44px] overflow-hidden shadow-xl min-h-0 min-[768px]:rounded-none min-[768px]:max-w-none" onClick={(e) => e.stopPropagation()}>
       <div className="py-1 px-[18px] pb-4 flex items-center border-b border-jacq-bord">
         <span className="text-[28px] italic text-jacq-gold" style={{ fontFamily: '"Instrument Serif", Georgia, serif' }}>Jacq</span>
       </div>
@@ -170,8 +170,8 @@ export default function AppLayout({
   }, [openChat]);
 
   const titleMap: Record<string, { title: string; sub?: string; back?: string; action?: string; onAction?: () => void }> = {
-    "/app/home": { title: "Home", sub: "What to do next" },
-    "/app": { title: "Understanding", sub: "Jacq's picture of you" },
+    "/app": { title: "Home", sub: "What to do next" },
+    "/app/understanding": { title: "Understanding", sub: "Jacq's picture of you" },
     "/app/tasks": {
       title: "Tasks",
       sub: "Jacq's work surface",

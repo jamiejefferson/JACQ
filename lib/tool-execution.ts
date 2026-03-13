@@ -547,6 +547,43 @@ export async function executeTool(
       return { ok: true, tool: toolName, data: `Draft created [draft_id:${draft.id}]. The user can review and send it from Gmail.` };
     }
 
+    if (toolName === "email_send") {
+      const accessToken = await getGoogleAccessToken(supabase, userId, "gmail");
+      if (!accessToken) return { ok: false, tool: toolName, reason: "Gmail not connected. Ask the user to reconnect Google in Settings." };
+
+      const to = typeof args.to === "string" ? args.to.trim() : "";
+      const subject = typeof args.subject === "string" ? args.subject : "";
+      const body = typeof args.body === "string" ? args.body : "";
+      if (!to || !subject || !body) return { ok: false, tool: toolName, reason: "to, subject, and body are required" };
+
+      const cc = typeof args.cc === "string" ? args.cc.trim() : "";
+
+      // Build RFC 2822 message
+      let rawMessage = `To: ${to}\n`;
+      if (cc) rawMessage += `Cc: ${cc}\n`;
+      rawMessage += `Subject: ${subject}\nContent-Type: text/plain; charset=utf-8\n\n${body}`;
+
+      // Base64url encode the message
+      const encoded = Buffer.from(rawMessage).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+
+      console.log(`[email_send] Sending to=${to} subject="${subject}" cc=${cc || "(none)"}`);
+
+      const res = await googleGmailFetch(accessToken, "/users/me/messages/send", {
+        method: "POST",
+        body: JSON.stringify({ raw: encoded }),
+      });
+
+      if (!res.ok) {
+        const err = await res.text();
+        console.error(`[email_send] API error ${res.status}: ${err}`);
+        return { ok: false, tool: toolName, reason: `Gmail API error: ${err}` };
+      }
+
+      const sent = (await res.json()) as { id: string };
+      console.log(`[email_send] Sent successfully, message id=${sent.id}`);
+      return { ok: true, tool: toolName, data: `Email sent to ${to} [message_id:${sent.id}].` };
+    }
+
     // --- Google Tasks tools ---
 
     if (toolName === "tasks_list") {

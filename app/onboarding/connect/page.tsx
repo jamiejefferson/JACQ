@@ -44,7 +44,7 @@ export default function OnboardingConnectPage() {
     } catch {
       // no-op
     }
-    router.push("/app/home");
+    router.push("/app");
     router.refresh();
   }
 

@@ -42,12 +42,12 @@ export async function middleware(request: NextRequest) {
     }
     if (path === "/sign-in") {
       return NextResponse.redirect(
-        new URL(onboardingComplete ? "/app/home" : "/onboarding", request.url)
+        new URL(onboardingComplete ? "/app" : "/onboarding", request.url)
       );
     }
     if (path === "/") {
       return NextResponse.redirect(
-        new URL(onboardingComplete ? "/app/home" : "/onboarding", request.url)
+        new URL(onboardingComplete ? "/app" : "/onboarding", request.url)
       );
     }
   } else {

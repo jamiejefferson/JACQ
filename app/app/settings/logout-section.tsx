@@ -18,8 +18,8 @@ export function LogoutSection() {
     } catch {
       // Continue to redirect even if signOut fails (e.g. no env)
     }
-    router.push("/sign-in");
-    router.refresh();
+    // Full navigation so session cookies are cleared before next request
+    window.location.href = "/sign-in";
   }
 
   async function handleDeleteAccount() {

@@ -32,3 +32,9 @@ If you only ever saved the token **locally**, the token is already in the DB (sa
 - **Option B:** Tap **Set up** again, re-paste the same token, and **Save**. That registers the webhook to the Vercel URL. Then **Connect** → **Open Telegram** → **Start**.
 
 After that, Telegram will show as Connected and future Connects will work without re-registering.
+
+## 5. Proactivity (optional)
+
+Jacq can send check-ins via Telegram at **Morning**, **After lunch**, and **End of day** (default times 07:30, 13:00, 17:30 in the user's timezone). Users edit these in **Settings → Proactivity**.
+
+For the scheduled job to run on Vercel, set **CRON_SECRET** in the project's Environment Variables (any secret string). Vercel Cron will call `/api/proactive/run` every 15 minutes and send the header `Authorization: Bearer <CRON_SECRET>`. If you don't set CRON_SECRET, the cron still runs but the route may reject the request; set it so the run succeeds.
