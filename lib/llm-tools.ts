@@ -138,7 +138,68 @@ export const CALENDAR_TOOLS = [
   },
 ] as const;
 
-export const ALL_TOOLS = [...EXTRACTION_TOOLS, ...CALENDAR_TOOLS];
+export const GMAIL_TOOLS = [
+  {
+    name: "email_search",
+    description:
+      "Search the user's Gmail inbox. Use this when the user asks about emails, messages from someone, or anything email-related. You can search emails without asking for permission first. Uses Gmail search syntax (e.g. 'from:alice subject:meeting').",
+    input_schema: schemaObject({
+      query: { type: "string", description: "Gmail search query (e.g. 'from:bob@example.com', 'subject:invoice', 'newer_than:7d')." },
+      max_results: { type: "number", description: "Maximum number of results. Default 10, max 20." },
+    }),
+  },
+  {
+    name: "email_read",
+    description:
+      "Read the full content of a specific email by message ID. Use this after email_search to get the full body of an email the user wants to read.",
+    input_schema: schemaObject({
+      message_id: { type: "string", description: "The Gmail message ID from a previous email_search result." },
+    }),
+  },
+  {
+    name: "email_draft",
+    description:
+      "Create a draft email in the user's Gmail. ALWAYS confirm the content with the user before calling this tool. The draft is NOT sent — the user can review and send it themselves.",
+    input_schema: schemaObject({
+      to: { type: "string", description: "Recipient email address." },
+      subject: { type: "string", description: "Email subject line." },
+      body: { type: "string", description: "Email body text." },
+      cc: { type: "string", description: "Optional CC email address(es), comma-separated." },
+    }),
+  },
+] as const;
+
+export const TASKS_TOOLS = [
+  {
+    name: "tasks_list",
+    description:
+      "List the user's Google Tasks. Use this when the user asks about their to-do list, tasks, or things they need to do in Google Tasks. You can read tasks without asking for permission first.",
+    input_schema: schemaObject({
+      max_results: { type: "number", description: "Maximum number of tasks to return. Default 20." },
+      show_completed: { type: "boolean", description: "Whether to include completed tasks. Default false." },
+    }),
+  },
+  {
+    name: "tasks_create",
+    description:
+      "Create a new task in the user's Google Tasks. Use this when the user wants to add something to their Google Tasks (not Jacq's internal task list). Confirm with the user before creating.",
+    input_schema: schemaObject({
+      title: { type: "string", description: "Task title." },
+      notes: { type: "string", description: "Optional task notes/details." },
+      due_date: { type: "string", description: "Optional due date in ISO 8601 format (date only, e.g. 2026-03-15)." },
+    }),
+  },
+  {
+    name: "tasks_complete",
+    description:
+      "Mark a Google Task as completed. Use this when the user says they've finished a task.",
+    input_schema: schemaObject({
+      task_id: { type: "string", description: "The Google Tasks task ID to mark as completed." },
+    }),
+  },
+] as const;
+
+export const ALL_TOOLS = [...EXTRACTION_TOOLS, ...CALENDAR_TOOLS, ...GMAIL_TOOLS, ...TASKS_TOOLS];
 
 export type ToolName = (typeof ALL_TOOLS)[number]["name"];
 

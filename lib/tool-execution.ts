@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { ToolName } from "./llm-tools";
-import { getGoogleAccessToken, googleCalendarFetch } from "./google-client";
+import { getGoogleAccessToken, googleCalendarFetch, googleGmailFetch, googleTasksFetch, decodeBase64Url } from "./google-client";
 
 const SECTIONS = ["about_me", "communication", "calendar_time", "working_style"] as const;
 
@@ -405,6 +405,229 @@ export async function executeTool(
 
       const updated = (await res.json()) as { id: string; summary: string };
       return { ok: true, tool: toolName, data: `Event updated: "${updated.summary}" [id:${updated.id}]` };
+    }
+
+    // --- Gmail tools ---
+
+    if (toolName === "email_search") {
+      const accessToken = await getGoogleAccessToken(supabase, userId, "gmail");
+      if (!accessToken) return { ok: false, tool: toolName, reason: "Gmail not connected. Ask the user to reconnect Google in Settings." };
+
+      const query = typeof args.query === "string" ? args.query.trim() : "";
+      if (!query) return { ok: false, tool: toolName, reason: "query is required" };
+      const maxResults = Math.min(typeof args.max_results === "number" ? args.max_results : 10, 20);
+
+      const listRes = await googleGmailFetch(accessToken, `/users/me/messages?q=${encodeURIComponent(query)}&maxResults=${maxResults}`);
+      if (!listRes.ok) {
+        const err = await listRes.text();
+        return { ok: false, tool: toolName, reason: `Gmail API error: ${err}` };
+      }
+
+      const listBody = (await listRes.json()) as { messages?: Array<{ id: string }> };
+      const messageIds = (listBody.messages ?? []).map((m) => m.id);
+
+      if (messageIds.length === 0) {
+        return { ok: true, tool: toolName, data: `No emails found for query: "${query}"` };
+      }
+
+      // Fetch snippets for each message in parallel
+      const snippets = await Promise.all(
+        messageIds.map(async (id) => {
+          const msgRes = await googleGmailFetch(accessToken, `/users/me/messages/${id}?format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Date`);
+          if (!msgRes.ok) return null;
+          const msg = (await msgRes.json()) as {
+            id: string;
+            snippet: string;
+            payload?: { headers?: Array<{ name: string; value: string }> };
+          };
+          const headers = msg.payload?.headers ?? [];
+          const header = (name: string) => headers.find((h) => h.name.toLowerCase() === name.toLowerCase())?.value ?? "";
+          return {
+            id: msg.id,
+            from: header("From"),
+            subject: header("Subject"),
+            date: header("Date"),
+            snippet: msg.snippet ?? "",
+          };
+        })
+      );
+
+      const validSnippets = snippets.filter(Boolean) as Array<{ id: string; from: string; subject: string; date: string; snippet: string }>;
+      const formatted = validSnippets
+        .map((s) => `From: ${s.from}\nSubject: ${s.subject}\nDate: ${s.date}\nSnippet: ${s.snippet}\n[id:${s.id}]`)
+        .join("\n---\n");
+
+      return { ok: true, tool: toolName, data: `${validSnippets.length} email(s) found:\n${formatted}` };
+    }
+
+    if (toolName === "email_read") {
+      const accessToken = await getGoogleAccessToken(supabase, userId, "gmail");
+      if (!accessToken) return { ok: false, tool: toolName, reason: "Gmail not connected. Ask the user to reconnect Google in Settings." };
+
+      const messageId = typeof args.message_id === "string" ? args.message_id.trim() : "";
+      if (!messageId) return { ok: false, tool: toolName, reason: "message_id is required" };
+
+      const res = await googleGmailFetch(accessToken, `/users/me/messages/${encodeURIComponent(messageId)}?format=full`);
+      if (!res.ok) {
+        const err = await res.text();
+        return { ok: false, tool: toolName, reason: `Gmail API error: ${err}` };
+      }
+
+      const msg = (await res.json()) as {
+        id: string;
+        payload?: {
+          headers?: Array<{ name: string; value: string }>;
+          body?: { data?: string };
+          parts?: Array<{ mimeType: string; body?: { data?: string }; parts?: Array<{ mimeType: string; body?: { data?: string } }> }>;
+        };
+      };
+
+      const headers = msg.payload?.headers ?? [];
+      const header = (name: string) => headers.find((h) => h.name.toLowerCase() === name.toLowerCase())?.value ?? "";
+
+      // Extract plain text body from MIME parts
+      let body = "";
+      const extractText = (parts: Array<{ mimeType: string; body?: { data?: string }; parts?: Array<{ mimeType: string; body?: { data?: string } }> }> | undefined): string => {
+        if (!parts) return "";
+        for (const part of parts) {
+          if (part.mimeType === "text/plain" && part.body?.data) {
+            return decodeBase64Url(part.body.data);
+          }
+          if (part.parts) {
+            const nested = extractText(part.parts);
+            if (nested) return nested;
+          }
+        }
+        return "";
+      };
+
+      if (msg.payload?.body?.data) {
+        body = decodeBase64Url(msg.payload.body.data);
+      } else {
+        body = extractText(msg.payload?.parts);
+      }
+
+      // Truncate very long emails
+      if (body.length > 3000) body = body.slice(0, 3000) + "\n...(truncated)";
+
+      const formatted = `From: ${header("From")}\nTo: ${header("To")}\nSubject: ${header("Subject")}\nDate: ${header("Date")}\n\n${body}`;
+      return { ok: true, tool: toolName, data: formatted };
+    }
+
+    if (toolName === "email_draft") {
+      const accessToken = await getGoogleAccessToken(supabase, userId, "gmail");
+      if (!accessToken) return { ok: false, tool: toolName, reason: "Gmail not connected. Ask the user to reconnect Google in Settings." };
+
+      const to = typeof args.to === "string" ? args.to.trim() : "";
+      const subject = typeof args.subject === "string" ? args.subject : "";
+      const body = typeof args.body === "string" ? args.body : "";
+      if (!to || !subject || !body) return { ok: false, tool: toolName, reason: "to, subject, and body are required" };
+
+      const cc = typeof args.cc === "string" ? args.cc.trim() : "";
+
+      // Build RFC 2822 message
+      let rawMessage = `To: ${to}\n`;
+      if (cc) rawMessage += `Cc: ${cc}\n`;
+      rawMessage += `Subject: ${subject}\nContent-Type: text/plain; charset=utf-8\n\n${body}`;
+
+      // Base64url encode the message
+      const encoded = Buffer.from(rawMessage).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+
+      const res = await googleGmailFetch(accessToken, "/users/me/drafts", {
+        method: "POST",
+        body: JSON.stringify({ message: { raw: encoded } }),
+      });
+
+      if (!res.ok) {
+        const err = await res.text();
+        return { ok: false, tool: toolName, reason: `Gmail API error: ${err}` };
+      }
+
+      const draft = (await res.json()) as { id: string };
+      return { ok: true, tool: toolName, data: `Draft created [draft_id:${draft.id}]. The user can review and send it from Gmail.` };
+    }
+
+    // --- Google Tasks tools ---
+
+    if (toolName === "tasks_list") {
+      const accessToken = await getGoogleAccessToken(supabase, userId, "calendar");
+      if (!accessToken) return { ok: false, tool: toolName, reason: "Google not connected. Ask the user to reconnect Google in Settings." };
+
+      const maxResults = typeof args.max_results === "number" ? args.max_results : 20;
+      const showCompleted = args.show_completed === true;
+
+      let path = `/lists/@default/tasks?maxResults=${maxResults}`;
+      if (!showCompleted) path += "&showCompleted=false&showHidden=false";
+
+      const res = await googleTasksFetch(accessToken, path);
+      if (!res.ok) {
+        const err = await res.text();
+        return { ok: false, tool: toolName, reason: `Tasks API error: ${err}` };
+      }
+
+      const body = (await res.json()) as { items?: Array<{ id: string; title: string; notes?: string; due?: string; status: string }> };
+      const tasks = body.items ?? [];
+
+      if (tasks.length === 0) {
+        return { ok: true, tool: toolName, data: showCompleted ? "No tasks found." : "No open tasks. All clear!" };
+      }
+
+      const formatted = tasks
+        .map((t) => {
+          const parts = [`- ${t.title} [${t.status}] [id:${t.id}]`];
+          if (t.due) parts.push(`  Due: ${new Date(t.due).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}`);
+          if (t.notes) parts.push(`  Notes: ${t.notes.slice(0, 100)}`);
+          return parts.join("\n");
+        })
+        .join("\n");
+
+      return { ok: true, tool: toolName, data: `${tasks.length} task(s):\n${formatted}` };
+    }
+
+    if (toolName === "tasks_create") {
+      const accessToken = await getGoogleAccessToken(supabase, userId, "calendar");
+      if (!accessToken) return { ok: false, tool: toolName, reason: "Google not connected. Ask the user to reconnect Google in Settings." };
+
+      const title = typeof args.title === "string" ? args.title.trim() : "";
+      if (!title) return { ok: false, tool: toolName, reason: "title is required" };
+
+      const task: Record<string, unknown> = { title };
+      if (typeof args.notes === "string") task.notes = args.notes;
+      if (typeof args.due_date === "string") task.due = new Date(args.due_date).toISOString();
+
+      const res = await googleTasksFetch(accessToken, "/lists/@default/tasks", {
+        method: "POST",
+        body: JSON.stringify(task),
+      });
+
+      if (!res.ok) {
+        const err = await res.text();
+        return { ok: false, tool: toolName, reason: `Tasks API error: ${err}` };
+      }
+
+      const created = (await res.json()) as { id: string; title: string };
+      return { ok: true, tool: toolName, data: `Task created: "${created.title}" [id:${created.id}]` };
+    }
+
+    if (toolName === "tasks_complete") {
+      const accessToken = await getGoogleAccessToken(supabase, userId, "calendar");
+      if (!accessToken) return { ok: false, tool: toolName, reason: "Google not connected. Ask the user to reconnect Google in Settings." };
+
+      const taskId = typeof args.task_id === "string" ? args.task_id.trim() : "";
+      if (!taskId) return { ok: false, tool: toolName, reason: "task_id is required" };
+
+      const res = await googleTasksFetch(accessToken, `/lists/@default/tasks/${encodeURIComponent(taskId)}`, {
+        method: "PATCH",
+        body: JSON.stringify({ status: "completed" }),
+      });
+
+      if (!res.ok) {
+        const err = await res.text();
+        return { ok: false, tool: toolName, reason: `Tasks API error: ${err}` };
+      }
+
+      const updated = (await res.json()) as { id: string; title: string };
+      return { ok: true, tool: toolName, data: `Task completed: "${updated.title}"` };
     }
 
     return { ok: false, tool: toolName, reason: "unknown tool" };

@@ -125,7 +125,7 @@ export default function SettingsPage() {
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
-          scopes: "email profile https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/calendar",
+          scopes: "email profile https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.compose https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/tasks",
           redirectTo: `${origin}/auth/callback?next=/app/settings`,
           queryParams: { access_type: "offline", prompt: "consent" },
         },

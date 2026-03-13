@@ -4,6 +4,7 @@ import { encryptApiKey, decryptApiKey } from "@/lib/llm-encrypt";
 const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
 const CALENDAR_BASE = "https://www.googleapis.com/calendar/v3";
 const GMAIL_BASE = "https://gmail.googleapis.com/gmail/v1";
+const TASKS_BASE = "https://tasks.googleapis.com/tasks/v1";
 
 /**
  * Get a valid Google access token for the given user and provider.
@@ -106,6 +107,22 @@ export async function googleGmailFetch(
   options: RequestInit = {}
 ): Promise<Response> {
   return fetch(`${GMAIL_BASE}${path}`, {
+    ...options,
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+      ...options.headers,
+    },
+  });
+}
+
+/** Fetch from Google Tasks REST API */
+export async function googleTasksFetch(
+  accessToken: string,
+  path: string,
+  options: RequestInit = {}
+): Promise<Response> {
+  return fetch(`${TASKS_BASE}${path}`, {
     ...options,
     headers: {
       Authorization: `Bearer ${accessToken}`,
