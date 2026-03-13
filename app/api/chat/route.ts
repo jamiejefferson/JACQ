@@ -6,6 +6,7 @@ import { buildSystemPrompt } from "@/lib/system-prompt";
 import { executeTool } from "@/lib/tool-execution";
 
 export const runtime = "nodejs";
+export const maxDuration = 60;
 
 export async function POST(request: NextRequest) {
   const auth = await getSupabaseAndUser();

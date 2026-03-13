@@ -5,6 +5,8 @@ import { resolveLLMConfig, completeWithTools, completeWithToolsRaw } from "@/lib
 import { buildSystemPrompt } from "@/lib/system-prompt";
 import { executeTool } from "@/lib/tool-execution";
 
+export const maxDuration = 60;
+
 const CONFIG_ID = "00000000-0000-0000-0000-000000000001";
 
 type TelegramUpdate = {
