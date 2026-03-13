@@ -114,7 +114,7 @@ export async function GET(request: Request) {
         await admin.from("users").update({ onboarding_complete: true }).eq("id", userId);
       }
       await supabase.auth.updateUser({ data: { onboarding_complete: true } });
-      return NextResponse.redirect(`${origin}/app`);
+      return NextResponse.redirect(`${origin}/app/home`);
     }
   }
 

@@ -21,6 +21,6 @@ export async function POST(request: NextRequest) {
   await supabase.auth.updateUser({ data: { onboarding_complete: true } });
 
   const body = await request.json().catch(() => ({}));
-  const nextPath = typeof body.redirectTo === "string" ? body.redirectTo : "/app";
+  const nextPath = typeof body.redirectTo === "string" ? body.redirectTo : "/app/home";
   return NextResponse.json({ ok: true, redirectTo: nextPath });
 }

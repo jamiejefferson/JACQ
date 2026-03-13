@@ -31,15 +31,23 @@ export async function middleware(request: NextRequest) {
   const path = request.nextUrl.pathname;
 
   if (user) {
-    const onboardingComplete = user.user_metadata?.onboarding_complete === true;
+    let onboardingComplete = user.user_metadata?.onboarding_complete === true;
+    if (!onboardingComplete) {
+      const { data: row } = await supabase
+        .from("users")
+        .select("onboarding_complete")
+        .eq("id", user.id)
+        .maybeSingle();
+      onboardingComplete = row?.onboarding_complete === true;
+    }
     if (path === "/sign-in") {
       return NextResponse.redirect(
-        new URL(onboardingComplete ? "/app" : "/onboarding", request.url)
+        new URL(onboardingComplete ? "/app/home" : "/onboarding", request.url)
       );
     }
     if (path === "/") {
       return NextResponse.redirect(
-        new URL(onboardingComplete ? "/app" : "/onboarding", request.url)
+        new URL(onboardingComplete ? "/app/home" : "/onboarding", request.url)
       );
     }
   } else {
