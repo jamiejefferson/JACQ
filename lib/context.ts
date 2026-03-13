@@ -93,9 +93,10 @@ export async function assembleContext(
   const intRows = (integrationsRes.data ?? []) as Array<{ provider: string; status: string; access_token: string | null }>;
   const intStatus = (provider: string) => {
     const row = intRows.find((r) => r.provider === provider);
-    if (!row || row.status !== "active") return "not_connected";
-    if (!row.access_token) return "connected_no_token";
+    if (!row) return "not_connected";
     if (row.status === "revoked") return "revoked";
+    if (row.status !== "active") return "not_connected";
+    if (!row.access_token) return "connected_no_token";
     return "ready";
   };
   const integrations = { gmail: intStatus("gmail"), calendar: intStatus("calendar") };
