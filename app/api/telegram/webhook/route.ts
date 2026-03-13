@@ -158,15 +158,20 @@ async function handleChatMessage(
     content: m.content,
   }));
 
-  // Call LLM
+  // Call LLM — loop up to 3 rounds of tool calls
   let result = await completeWithTools(config, system, apiMessages);
   let content = result.content;
+  let currentToolCalls = result.toolCalls;
+  let rawMessages: Array<{ role: "user" | "assistant"; content: unknown }> = apiMessages.map((m) => ({
+    role: m.role,
+    content: m.content as unknown,
+  }));
+  const MAX_TOOL_ROUNDS = 3;
 
-  // If the LLM used tools, execute them and do a follow-up call for a text reply
-  if (result.toolCalls.length > 0) {
+  for (let round = 0; round < MAX_TOOL_ROUNDS && currentToolCalls.length > 0; round++) {
     const toolResults: Array<{ tool_use_id: string; result: string }> = [];
     let hasDataResults = false;
-    for (const tc of result.toolCalls) {
+    for (const tc of currentToolCalls) {
       const toolResult = await executeTool(supabase, userId, sessionId, tc.name, tc.input);
       const resultText = toolResult.ok
         ? (toolResult.data ?? `Done: ${tc.name}`)
@@ -175,38 +180,37 @@ async function handleChatMessage(
       if (toolResult.ok && toolResult.data) hasDataResults = true;
     }
 
-    // Do a follow-up call with tool results so the model can respond with the data
-    if (!content || hasDataResults) {
-      const followUpMessages = [
-        ...apiMessages,
-        {
-          role: "assistant" as const,
-          content: result.toolCalls.map((tc) => ({
-            type: "tool_use" as const,
-            id: tc.id,
-            name: tc.name,
-            input: tc.input,
-          })),
-        },
-        {
-          role: "user" as const,
-          content: toolResults.map((tr) => ({
-            type: "tool_result" as const,
-            tool_use_id: tr.tool_use_id,
-            content: tr.result,
-          })),
-        },
-      ];
+    // Build follow-up messages with tool use + results
+    rawMessages = [
+      ...rawMessages,
+      {
+        role: "assistant",
+        content: currentToolCalls.map((tc) => ({
+          type: "tool_use" as const,
+          id: tc.id,
+          name: tc.name,
+          input: tc.input,
+        })),
+      },
+      {
+        role: "user",
+        content: toolResults.map((tr) => ({
+          type: "tool_result" as const,
+          tool_use_id: tr.tool_use_id,
+          content: tr.result,
+        })),
+      },
+    ];
 
-      try {
-        const followUp = await completeWithToolsRaw(config, system, followUpMessages);
-        content = followUp.content;
-      } catch {
-        // Fall back to raw data or generic message
-        content = hasDataResults
-          ? toolResults.map((tr) => tr.result).join("\n")
-          : "Done! I've saved that.";
-      }
+    try {
+      const followUp = await completeWithToolsRaw(config, system, rawMessages);
+      content = followUp.content;
+      currentToolCalls = followUp.toolCalls;
+    } catch {
+      content = hasDataResults
+        ? toolResults.map((tr) => tr.result).join("\n")
+        : "Done! I've saved that.";
+      currentToolCalls = [];
     }
   }
 

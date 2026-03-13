@@ -78,61 +78,70 @@ export async function POST(request: NextRequest) {
 
   const toolsCalled: string[] = [];
   const toolResults: Array<{ type: string; tool: string; label?: string; section?: string; ok?: boolean; reason?: string }> = [];
-  const executedTools: Array<{ id: string; name: string; input: Record<string, unknown>; resultText: string }> = [];
-  let hasDataResults = false;
 
-  for (const tc of toolCalls) {
-    toolsCalled.push(tc.name);
-    const result = await executeTool(supabase, user.id, sid, tc.name, tc.input);
+  // Loop up to 3 rounds of tool calls
+  let currentToolCalls = toolCalls;
+  let rawMessages: Array<{ role: "user" | "assistant"; content: unknown }> = apiMessages.map((m) => ({
+    role: m.role,
+    content: m.content as unknown,
+  }));
+  const MAX_TOOL_ROUNDS = 3;
 
-    const resultText = result.ok
-      ? (result.data ?? `Done: ${tc.name}`)
-      : `Failed: ${result.reason ?? "unknown error"}`;
-    executedTools.push({ id: tc.id, name: tc.name, input: tc.input, resultText });
+  for (let round = 0; round < MAX_TOOL_ROUNDS && currentToolCalls.length > 0; round++) {
+    const roundResults: Array<{ id: string; name: string; input: Record<string, unknown>; resultText: string }> = [];
+    let hasDataResults = false;
 
-    if (result.ok && result.data) hasDataResults = true;
+    for (const tc of currentToolCalls) {
+      toolsCalled.push(tc.name);
+      const result = await executeTool(supabase, user.id, sid, tc.name, tc.input);
 
-    if (result.ok && result.tool === "extract_understanding") {
-      toolResults.push({
-        type: "tool_result",
-        tool: result.tool,
-        label: result.label,
-        section: result.section,
-      });
-    } else if (result.ok) {
-      toolResults.push({ type: "tool_result", tool: result.tool });
-    } else {
-      toolResults.push({ type: "tool_result", tool: result.tool, ok: false, reason: result.reason ?? "Tool failed" });
+      const resultText = result.ok
+        ? (result.data ?? `Done: ${tc.name}`)
+        : `Failed: ${result.reason ?? "unknown error"}`;
+      roundResults.push({ id: tc.id, name: tc.name, input: tc.input, resultText });
+
+      if (result.ok && result.data) hasDataResults = true;
+
+      if (result.ok && result.tool === "extract_understanding") {
+        toolResults.push({
+          type: "tool_result",
+          tool: result.tool,
+          label: result.label,
+          section: result.section,
+        });
+      } else if (result.ok) {
+        toolResults.push({ type: "tool_result", tool: result.tool });
+      } else {
+        toolResults.push({ type: "tool_result", tool: result.tool, ok: false, reason: result.reason ?? "Tool failed" });
+      }
     }
-  }
 
-  // If any tools returned data (e.g. calendar events), do a follow-up LLM call
-  // so the model can format the data into a user-facing reply
-  if (executedTools.length > 0 && (hasDataResults || !content)) {
-    const followUpMessages = [
-      ...apiMessages.map((m) => ({ role: m.role, content: m.content as unknown })),
+    // Build follow-up messages with tool use + results
+    rawMessages = [
+      ...rawMessages,
       {
-        role: "assistant" as const,
-        content: toolCalls.map((tc) => ({
+        role: "assistant",
+        content: currentToolCalls.map((tc) => ({
           type: "tool_use" as const,
           id: tc.id,
           name: tc.name,
           input: tc.input,
-        })) as unknown,
+        })),
       },
       {
-        role: "user" as const,
-        content: executedTools.map((et) => ({
+        role: "user",
+        content: roundResults.map((r) => ({
           type: "tool_result" as const,
-          tool_use_id: et.id,
-          content: et.resultText,
-        })) as unknown,
+          tool_use_id: r.id,
+          content: r.resultText,
+        })),
       },
     ];
 
     try {
-      const followUp = await completeWithToolsRaw(config, system, followUpMessages);
+      const followUp = await completeWithToolsRaw(config, system, rawMessages);
       content = followUp.content;
+      currentToolCalls = followUp.toolCalls;
       if (followUp.usage) {
         usage = {
           prompt_tokens: (usage.prompt_tokens ?? 0) + (followUp.usage.prompt_tokens ?? 0),
@@ -140,10 +149,10 @@ export async function POST(request: NextRequest) {
         };
       }
     } catch {
-      // Fall back to raw data if the follow-up call fails
       if (!content) {
-        content = executedTools.map((et) => et.resultText).join("\n");
+        content = roundResults.map((r) => r.resultText).join("\n");
       }
+      currentToolCalls = [];
     }
   }
 
