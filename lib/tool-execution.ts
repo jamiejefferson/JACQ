@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { ToolName } from "./llm-tools";
 import { getGoogleAccessToken, googleCalendarFetch, googleGmailFetch, googleTasksFetch, decodeBase64Url } from "./google-client";
+import { runWebSearch, runWebFetch } from "./web-search";
 
 const SECTIONS = ["about_me", "communication", "calendar_time", "working_style"] as const;
 
@@ -665,6 +666,27 @@ export async function executeTool(
 
       const updated = (await res.json()) as { id: string; title: string };
       return { ok: true, tool: toolName, data: `Task completed: "${updated.title}"` };
+    }
+
+    // --- Web tools ---
+
+    if (toolName === "web_search") {
+      const query = typeof args.query === "string" ? args.query.trim() : "";
+      if (!query) return { ok: false, tool: toolName, reason: "query is required" };
+      const maxResults = typeof args.max_results === "number" ? args.max_results : 5;
+
+      console.log(`[web_search] query="${query}" max_results=${maxResults}`);
+      const results = await runWebSearch(query, maxResults);
+      return { ok: true, tool: toolName, data: results };
+    }
+
+    if (toolName === "web_fetch") {
+      const url = typeof args.url === "string" ? args.url.trim() : "";
+      if (!url) return { ok: false, tool: toolName, reason: "url is required" };
+
+      console.log(`[web_fetch] url="${url}"`);
+      const content = await runWebFetch(url);
+      return { ok: true, tool: toolName, data: content };
     }
 
     return { ok: false, tool: toolName, reason: "unknown tool" };

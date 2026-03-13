@@ -210,7 +210,27 @@ export const TASKS_TOOLS = [
   },
 ] as const;
 
-export const ALL_TOOLS = [...EXTRACTION_TOOLS, ...CALENDAR_TOOLS, ...GMAIL_TOOLS, ...TASKS_TOOLS];
+export const WEB_TOOLS = [
+  {
+    name: "web_search",
+    description:
+      "Search the web for current information. Use this when the user asks you to look something up, find suppliers, research a topic, or get information you don't already know. You can search without asking for permission first.",
+    input_schema: schemaObject({
+      query: { type: "string", description: "The search query." },
+      max_results: { type: "number", description: "Maximum number of results. Default 5, max 10." },
+    }),
+  },
+  {
+    name: "web_fetch",
+    description:
+      "Fetch and read the content of a specific web page. Use this when the user shares a URL and wants you to read or summarise it, or after a web_search to get more detail from a specific result.",
+    input_schema: schemaObject({
+      url: { type: "string", description: "The URL to fetch." },
+    }),
+  },
+] as const;
+
+export const ALL_TOOLS = [...EXTRACTION_TOOLS, ...CALENDAR_TOOLS, ...GMAIL_TOOLS, ...TASKS_TOOLS, ...WEB_TOOLS];
 
 export type ToolName = (typeof ALL_TOOLS)[number]["name"];
 
