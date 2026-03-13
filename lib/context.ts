@@ -90,12 +90,13 @@ export async function assembleContext(
   const recent_actions = (activityRes.data ?? []) as { id: string; description: string; action_type: string; created_at: string }[];
   const communication_profile = commProfileRes.data as Record<string, unknown> | null;
 
-  const intRows = (integrationsRes.data ?? []) as Array<{ provider: string; status: string; access_token: string | null }>;
+  const intRows = (integrationsRes.data ?? []) as Array<{ provider: string; status: string | null; access_token: string | null }>;
   const intStatus = (provider: string) => {
     const row = intRows.find((r) => r.provider === provider);
     if (!row) return "not_connected";
-    if (row.status === "revoked") return "revoked";
-    if (row.status !== "active") return "not_connected";
+    const s = row.status ?? "";
+    if (s === "revoked") return "revoked";
+    if (s !== "active") return "not_connected";
     if (!row.access_token) return "connected_no_token";
     return "ready";
   };
