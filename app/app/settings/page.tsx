@@ -46,6 +46,21 @@ async function fetchCommunicationProfile(): Promise<Record<string, unknown>> {
   return res.json();
 }
 
+type LLMConfig = {
+  provider?: string;
+  model?: string;
+  api_key_ref?: string;
+  fallback_to_jacq?: boolean;
+};
+
+type ModelOption = { id: string; display_name: string };
+
+async function fetchLLMConfig(): Promise<LLMConfig> {
+  const res = await fetch("/api/llm/config");
+  if (!res.ok) return {};
+  return res.json();
+}
+
 export default function SettingsPage() {
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -65,6 +80,15 @@ export default function SettingsPage() {
   const [registerWebhookMessage, setRegisterWebhookMessage] = useState<string | null>(null);
   const [proactivityChecks, setProactivityChecks] = useState<ProactivityCheck[]>([]);
   const [proactivitySaving, setProactivitySaving] = useState(false);
+  const [showLLMModal, setShowLLMModal] = useState(false);
+  const [llmProvider, setLLMProvider] = useState<"anthropic" | "google">("anthropic");
+  const [llmApiKey, setLLMApiKey] = useState("");
+  const [llmKeyValid, setLLMKeyValid] = useState<boolean | null>(null);
+  const [llmKeyValidating, setLLMKeyValidating] = useState(false);
+  const [llmModels, setLLMModels] = useState<ModelOption[]>([]);
+  const [llmSelectedModel, setLLMSelectedModel] = useState("");
+  const [llmSaving, setLLMSaving] = useState(false);
+  const [llmError, setLLMError] = useState<string | null>(null);
   const { data: integrations = {}, refetch: refetchIntegrations } = useQuery({ queryKey: ["integrations"], queryFn: fetchIntegrations });
   const { data: telegramStatus = { configured: false }, refetch: refetchTelegramStatus } = useQuery({
     queryKey: ["telegram-status"],
@@ -72,6 +96,7 @@ export default function SettingsPage() {
   });
   const { data: me } = useQuery({ queryKey: ["users", "me"], queryFn: fetchMe });
   const { data: commProfile = {} } = useQuery({ queryKey: ["communication-profile"], queryFn: fetchCommunicationProfile });
+  const { data: llmConfig = {} as LLMConfig, refetch: refetchLLMConfig } = useQuery({ queryKey: ["llm-config"], queryFn: fetchLLMConfig });
 
   const userName = (me as { name?: string } | undefined)?.name;
   const defaultSignoffPa = userName ? `Jacq, ViPA to ${userName}` : "Jacq, ViPA to you";
@@ -111,6 +136,83 @@ export default function SettingsPage() {
       if (res.ok) queryClient.invalidateQueries({ queryKey: ["users", "me"] });
     } finally {
       setProactivitySaving(false);
+    }
+  }
+
+  const llmProviderLabel = llmConfig.provider === "google" ? "Google Gemini" : "Anthropic Claude";
+  const llmModelLabel = llmConfig.model ?? (llmConfig.provider === "google" ? "gemini-1.5-flash" : "claude-haiku-4-5");
+  const llmHasKey = !!llmConfig.api_key_ref;
+
+  function openLLMModal() {
+    setLLMProvider((llmConfig.provider === "google" ? "google" : "anthropic") as "anthropic" | "google");
+    setLLMApiKey("");
+    setLLMKeyValid(null);
+    setLLMModels([]);
+    setLLMSelectedModel(llmConfig.model ?? "");
+    setLLMError(null);
+    setShowLLMModal(true);
+  }
+
+  function closeLLMModal() {
+    setShowLLMModal(false);
+    setLLMApiKey("");
+    setLLMKeyValid(null);
+    setLLMModels([]);
+    setLLMError(null);
+  }
+
+  async function validateLLMKey() {
+    if (!llmApiKey.trim()) return;
+    setLLMKeyValidating(true);
+    setLLMKeyValid(null);
+    setLLMModels([]);
+    setLLMSelectedModel("");
+    try {
+      const res = await fetch("/api/llm/validate-key", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider: llmProvider, key: llmApiKey.trim() }),
+      });
+      const data = await res.json();
+      setLLMKeyValid(data.valid === true);
+      if (data.valid === true && Array.isArray(data.models) && data.models.length > 0) {
+        setLLMModels(data.models);
+        const preferred = data.models.find((m: ModelOption) => m.id.includes("haiku")) ?? data.models[0];
+        setLLMSelectedModel(preferred.id);
+      }
+    } catch {
+      setLLMKeyValid(false);
+    } finally {
+      setLLMKeyValidating(false);
+    }
+  }
+
+  async function saveLLMConfig() {
+    setLLMSaving(true);
+    setLLMError(null);
+    try {
+      const body: Record<string, unknown> = {
+        provider: llmProvider,
+        fallback_to_jacq: false,
+      };
+      if (llmApiKey.trim()) body.api_key = llmApiKey.trim();
+      if (llmSelectedModel) body.model = llmSelectedModel;
+      const res = await fetch("/api/llm/config", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setLLMError(typeof data.error === "string" ? data.error : "Failed to save");
+        return;
+      }
+      refetchLLMConfig();
+      closeLLMModal();
+    } catch {
+      setLLMError("Something went wrong");
+    } finally {
+      setLLMSaving(false);
     }
   }
 
@@ -263,11 +365,12 @@ export default function SettingsPage() {
     {
       label: "AI & Desktop",
       rows: [
-        { k: "Cloud LLM", v: "Anthropic Claude", arrow: true },
+        { k: "Cloud LLM", v: llmProviderLabel, action: "Change", onAction: openLLMModal },
+        { k: "Model", v: llmModelLabel, c: "t2" },
+        { k: "API key", v: llmHasKey ? "Set" : "Not set", c: llmHasKey ? "green" : "t3", action: llmHasKey ? "Change" : "Add", onAction: openLLMModal },
         { k: "Local LLM", v: "Not set up", c: "t3" },
         { k: "Desktop app", v: "Not installed", c: "t3" },
         { k: "Browser control", v: "Enabled", c: "green" },
-        { k: "Own API key", v: "Not set", c: "t3", action: "Add" },
       ],
     },
     {
@@ -571,6 +674,117 @@ export default function SettingsPage() {
             <button type="button" onClick={closeTelegramModal} className="w-full py-2.5 rounded-xl bg-jacq-surf2 text-jacq-t1 text-[14px] font-semibold cursor-pointer">
               Cancel
             </button>
+          </div>
+        </>
+      )}
+
+      {showLLMModal && (
+        <>
+          <div className="fixed inset-0 z-[80] bg-black/40" onClick={closeLLMModal} />
+          <div className="fixed left-4 right-4 top-1/2 -translate-y-1/2 z-[81] bg-jacq-surf rounded-[14px] border border-jacq-bord p-4 shadow-lg max-w-[343px] mx-auto max-h-[85vh] overflow-y-auto">
+            <h3 className="text-[20px] text-jacq-t1 mb-2" style={{ fontFamily: '"Gilda Display", Georgia, serif' }}>
+              Cloud LLM
+            </h3>
+            <p className="text-[14px] text-jacq-t2 mb-3">
+              {llmHasKey ? "Update your provider, model, or API key." : "Add your API key to get started."}
+            </p>
+
+            <div className="space-y-3">
+              <div>
+                <label className="block text-[12px] text-jacq-t2 mb-1">Provider</label>
+                <div className="flex gap-3">
+                  {(["anthropic", "google"] as const).map((p) => (
+                    <label key={p} className="flex items-center gap-1.5 text-[13px] text-jacq-t2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="llm-provider"
+                        checked={llmProvider === p}
+                        onChange={() => {
+                          setLLMProvider(p);
+                          setLLMModels([]);
+                          setLLMSelectedModel("");
+                          setLLMKeyValid(null);
+                        }}
+                        className="rounded-full"
+                      />
+                      {p === "anthropic" ? "Claude" : "Google"}
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[12px] text-jacq-t2 mb-1">
+                  API key {llmHasKey && <span className="text-jacq-green">(current key set)</span>}
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="password"
+                    value={llmApiKey}
+                    onChange={(e) => { setLLMApiKey(e.target.value); setLLMKeyValid(null); }}
+                    onBlur={() => llmApiKey.trim() && validateLLMKey()}
+                    placeholder={llmHasKey ? "Paste new key to change" : "Paste your API key"}
+                    className="flex-1 h-10 rounded-lg border border-jacq-bord bg-jacq-bg px-3 text-[13px] font-mono text-jacq-t1 placeholder:text-jacq-t3"
+                  />
+                  <button
+                    type="button"
+                    onClick={validateLLMKey}
+                    disabled={!llmApiKey.trim() || llmKeyValidating}
+                    className="h-10 px-3 rounded-lg bg-jacq-surf2 border border-jacq-bord text-[13px] text-jacq-t1 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {llmKeyValidating ? "..." : "Validate"}
+                  </button>
+                </div>
+                {llmKeyValid === true && <p className="text-[12px] text-jacq-green mt-1">Key valid</p>}
+                {llmKeyValid === false && <p className="text-[12px] text-jacq-red mt-1">That key doesn&apos;t seem to work.</p>}
+              </div>
+
+              {llmProvider === "anthropic" && llmModels.length > 0 && (
+                <div>
+                  <label className="block text-[12px] text-jacq-t2 mb-1">Model</label>
+                  <select
+                    value={llmSelectedModel}
+                    onChange={(e) => setLLMSelectedModel(e.target.value)}
+                    className="w-full h-10 rounded-lg border border-jacq-bord bg-jacq-bg px-3 text-[13px] text-jacq-t1"
+                  >
+                    {llmModels.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.display_name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {llmProvider === "anthropic" && (
+                <a
+                  href="https://console.anthropic.com/settings/keys"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-block text-[12px] text-jacq-gold underline"
+                >
+                  Get an Anthropic API key
+                </a>
+              )}
+            </div>
+
+            {llmError && (
+              <p className="text-[12px] text-jacq-red mt-2">{llmError}</p>
+            )}
+
+            <div className="flex gap-2 mt-4">
+              <button type="button" onClick={closeLLMModal} className="flex-1 py-2.5 rounded-xl bg-jacq-surf2 text-jacq-t1 text-[14px] font-semibold cursor-pointer">
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={saveLLMConfig}
+                disabled={llmSaving || (!!llmApiKey.trim() && llmKeyValid !== true)}
+                className="flex-1 py-2.5 rounded-xl bg-jacq-gold text-jacq-t1 text-[14px] font-semibold cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {llmSaving ? "Saving..." : "Save"}
+              </button>
+            </div>
           </div>
         </>
       )}
