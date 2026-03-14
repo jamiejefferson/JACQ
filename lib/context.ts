@@ -91,12 +91,12 @@ export async function assembleContext(
   const communication_profile = commProfileRes.data as Record<string, unknown> | null;
 
   const intRows = (integrationsRes.data ?? []) as Array<{ provider: string; status: string | null; access_token: string | null }>;
-  const intStatus = (provider: string) => {
+  const intStatus = (provider: string): string => {
     const row = intRows.find((r) => r.provider === provider);
     if (!row) return "not_connected";
-    const s = row.status ?? "";
-    if (s === "revoked") return "revoked";
-    if (s !== "active") return "not_connected";
+    const status = row.status ?? "";
+    if (status === "revoked") return "revoked";
+    if (status !== "active") return "not_connected";
     if (!row.access_token) return "connected_no_token";
     return "ready";
   };
