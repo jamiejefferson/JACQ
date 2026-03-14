@@ -67,15 +67,17 @@ export async function runWebFetch(url: string): Promise<string> {
     }
 
     let text = await res.text();
-    if (text.length > MAX_FETCH_SIZE) {
-      text = text.slice(0, MAX_FETCH_SIZE);
-    }
 
-    // Strip HTML tags to get readable text
+    // Strip HTML tags to get readable text (must happen BEFORE truncation
+    // so that a truncation boundary can't split a <script> tag and leak JS)
     if (contentType.includes("html")) {
-      // Remove script/style blocks
+      // Remove script/style/noscript blocks
       text = text.replace(/<script[\s\S]*?<\/script>/gi, "");
       text = text.replace(/<style[\s\S]*?<\/style>/gi, "");
+      text = text.replace(/<noscript[\s\S]*?<\/noscript>/gi, "");
+      // Remove any unclosed script/style blocks at end of content
+      text = text.replace(/<script[\s\S]*$/gi, "");
+      text = text.replace(/<style[\s\S]*$/gi, "");
       // Remove tags
       text = text.replace(/<[^>]+>/g, " ");
       // Collapse whitespace
