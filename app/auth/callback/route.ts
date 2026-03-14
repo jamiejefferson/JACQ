@@ -68,6 +68,8 @@ export async function GET(request: Request) {
     const providerToken = data.session.provider_token;
     const providerRefreshToken = data.session.provider_refresh_token;
 
+    console.log(`[auth/callback] userId=${userId} providerToken=${providerToken ? "present" : "MISSING"} refreshToken=${providerRefreshToken ? "present" : "MISSING"}`);
+
     const encryptedAccess = providerToken ? encryptApiKey(userId, providerToken) : null;
     const encryptedRefresh = providerRefreshToken ? encryptApiKey(userId, providerRefreshToken) : null;
     const tokenExpiry = providerToken
@@ -76,15 +78,28 @@ export async function GET(request: Request) {
 
     const now = new Date().toISOString();
     for (const provider of GOOGLE_INTEGRATION_PROVIDERS) {
+      // On reconnect, Google may not return a new refresh token if one was
+      // previously issued. Keep the existing refresh token in that case.
+      let refreshTokenToStore = encryptedRefresh;
+      if (!refreshTokenToStore) {
+        const { data: existing } = await supabase
+          .from("user_integrations")
+          .select("refresh_token")
+          .eq("user_id", userId)
+          .eq("provider", provider)
+          .single();
+        refreshTokenToStore = existing?.refresh_token ?? null;
+      }
+
       await supabase.from("user_integrations").upsert(
         {
           user_id: userId,
           provider,
           status: "active",
           connected_at: now,
-          ...(encryptedAccess && { access_token: encryptedAccess }),
-          ...(encryptedRefresh && { refresh_token: encryptedRefresh }),
-          ...(tokenExpiry && { token_expiry: tokenExpiry }),
+          access_token: encryptedAccess,
+          refresh_token: refreshTokenToStore,
+          token_expiry: tokenExpiry,
         },
         { onConflict: "user_id,provider" }
       );
