@@ -12,6 +12,16 @@ function contextLabel(ctx: ChatContext | null): string {
   return parts.join(" · ");
 }
 
+function PulsingDots() {
+  return (
+    <span className="inline-flex gap-[3px]">
+      <span className="w-1.5 h-1.5 rounded-full bg-jacq-gold animate-pulse" style={{ animationDelay: "0ms" }} />
+      <span className="w-1.5 h-1.5 rounded-full bg-jacq-gold animate-pulse" style={{ animationDelay: "150ms" }} />
+      <span className="w-1.5 h-1.5 rounded-full bg-jacq-gold animate-pulse" style={{ animationDelay: "300ms" }} />
+    </span>
+  );
+}
+
 function ChatPanelComponent() {
   const isOpen = useAppStore((s) => s.isChatPanelOpen);
   const context = useAppStore((s) => s.activeChatContext);
@@ -26,6 +36,8 @@ function ChatPanelComponent() {
   const [error, setError] = useState<string | null>(null);
   const [streamingSaved, setStreamingSaved] = useState<{ label?: string; section?: string }[]>([]);
   const [streamingContent, setStreamingContent] = useState("");
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [greetingLoading, setGreetingLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -35,7 +47,56 @@ function ChatPanelComponent() {
 
   useEffect(() => {
     scrollRef.current?.scrollTo(0, scrollRef.current.scrollHeight);
-  }, [history, streamingSaved, streamingContent]);
+  }, [history, streamingSaved, streamingContent, statusMessage]);
+
+  // Fetch proactive greeting when chat opens with no history
+  useEffect(() => {
+    if (!isOpen || history.length > 0) return;
+
+    let cancelled = false;
+    setGreetingLoading(true);
+
+    (async () => {
+      try {
+        const res = await fetch("/api/chat/greeting");
+        if (!res.ok || cancelled) return;
+
+        const reader = res.body?.getReader();
+        if (!reader) return;
+
+        const decoder = new TextDecoder();
+        let buffer = "";
+        let greetingText = "";
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() ?? "";
+          for (const line of lines) {
+            if (!line.trim()) continue;
+            try {
+              const event = JSON.parse(line);
+              if (event.type === "content" && event.text) {
+                greetingText = event.text;
+              }
+            } catch { /* skip */ }
+          }
+        }
+
+        if (!cancelled && greetingText) {
+          appendChatMessage({ role: "assistant", content: greetingText });
+        }
+      } catch {
+        // Silently fail — user can still type
+      } finally {
+        if (!cancelled) setGreetingLoading(false);
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [isOpen]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function send() {
     const text = input.trim();
@@ -47,6 +108,7 @@ function ChatPanelComponent() {
     setError(null);
     setStreamingSaved([]);
     setStreamingContent("");
+    setStatusMessage(null);
 
     const messages = [...history, { role: "user" as const, content: text }].map((m) => ({
       role: m.role,
@@ -79,8 +141,10 @@ function ChatPanelComponent() {
         for (const line of lines) {
           if (!line.trim()) continue;
           try {
-            const event = JSON.parse(line) as { type: string; tool?: string; label?: string; section?: string; text?: string; sessionId?: string; ok?: boolean; reason?: string };
-            if (event.type === "tool_result" && event.tool === "extract_understanding") {
+            const event = JSON.parse(line) as { type: string; tool?: string; label?: string; section?: string; text?: string; sessionId?: string; ok?: boolean; reason?: string; message?: string };
+            if (event.type === "status" && event.message) {
+              setStatusMessage(event.message);
+            } else if (event.type === "tool_result" && event.tool === "extract_understanding") {
               if (event.ok === false && event.reason) {
                 toolErrorReasons.push(event.reason);
               } else {
@@ -90,11 +154,16 @@ function ChatPanelComponent() {
             } else if (event.type === "content" && event.text != null) {
               content = event.text;
               setStreamingContent(content);
+              setStatusMessage(null);
+            } else if (event.type === "error" && event.message) {
+              throw new Error(event.message);
             } else if (event.type === "done") {
               if (event.sessionId) setChatSessionId(event.sessionId);
             }
-          } catch {
-            // skip malformed line
+          } catch (innerErr) {
+            // Re-throw server errors; silently skip malformed JSON lines
+            if (innerErr instanceof SyntaxError) continue;
+            throw innerErr;
           }
         }
       }
@@ -110,6 +179,7 @@ function ChatPanelComponent() {
       setLoading(false);
       setStreamingSaved([]);
       setStreamingContent("");
+      setStatusMessage(null);
     }
   }
 
@@ -147,8 +217,13 @@ function ChatPanelComponent() {
         </div>
 
         <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-2 min-h-0">
-          {history.length === 0 && !loading && (
+          {history.length === 0 && !loading && !greetingLoading && (
             <p className="text-[14px] text-jacq-t2">Say something and I&apos;ll help.</p>
+          )}
+          {greetingLoading && history.length === 0 && !loading && (
+            <div className="flex items-center gap-2 mt-2">
+              <PulsingDots />
+            </div>
           )}
           {history.map((msg, i) =>
             msg.role === "user" ? (
@@ -189,12 +264,24 @@ function ChatPanelComponent() {
               {streamingSaved.map((s, j) => (
                 <SavedPanel key={j} label={s.label ?? ""} section={s.section} />
               ))}
-              <p
-                className="text-[20px] text-jacq-t1 leading-snug mt-2"
-                style={{ fontFamily: '"Gilda Display", Georgia, serif' }}
-              >
-                {streamingContent || "…"}
-              </p>
+              {statusMessage && !streamingContent ? (
+                <div className="flex items-center gap-2 mt-2">
+                  <PulsingDots />
+                  <span
+                    className="text-[14px] text-jacq-t2"
+                    style={{ fontFamily: '"Gilda Display", Georgia, serif' }}
+                  >
+                    {statusMessage}
+                  </span>
+                </div>
+              ) : (
+                <p
+                  className="text-[20px] text-jacq-t1 leading-snug mt-2"
+                  style={{ fontFamily: '"Gilda Display", Georgia, serif' }}
+                >
+                  {streamingContent || "…"}
+                </p>
+              )}
             </>
           )}
           {error && (

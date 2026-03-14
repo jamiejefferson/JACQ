@@ -139,7 +139,7 @@ export function buildProactiveMessage(pkg: ContextPackage, slotId: string): stri
 }
 
 /** Build a one-line context summary for the LLM (tasks + commitments). */
-function getContextSummaryForProactive(pkg: ContextPackage): string {
+export function getContextSummaryForProactive(pkg: ContextPackage): string {
   const parts: string[] = [];
   if (pkg.active_tasks.length > 0) {
     parts.push(`Tasks: ${pkg.active_tasks.slice(0, 6).map((t) => t.title).join("; ")}`);
@@ -194,6 +194,40 @@ Instructions:
       config,
       system,
       [{ role: "user", content: "Write the check-in message now. Output only the message, no preamble." }],
+      []
+    );
+    const text = (res.content ?? "").trim();
+    return text.length > 0 ? text : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Generate a short greeting for the web chat panel. Returns null on error. */
+export async function generateWebGreeting(
+  config: import("./llm-client").LLMResolvedConfig,
+  pkg: ContextPackage
+): Promise<string | null> {
+  const { completeWithTools } = await import("./llm-client");
+  const name = pkg.user.name ?? "there";
+  const contextSummary = getContextSummaryForProactive(pkg);
+
+  const system = `You are Jacq, a warm personal assistant. Write a single short greeting for when the user opens the chat.
+
+User's name: ${name}
+Context: ${contextSummary}
+
+Instructions:
+- Greet them warmly and briefly. One or two sentences.
+- If there are tasks or commitments, mention them briefly to show you're on top of things.
+- If nothing on their list, just be friendly and invite them to chat.
+- No markdown. Plain text. British English. Under 40 words. Warm and human.`;
+
+  try {
+    const res = await completeWithTools(
+      config,
+      system,
+      [{ role: "user", content: "Write the greeting now. Output only the greeting." }],
       []
     );
     const text = (res.content ?? "").trim();

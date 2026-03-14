@@ -232,6 +232,29 @@ export const WEB_TOOLS = [
 
 export const ALL_TOOLS = [...EXTRACTION_TOOLS, ...CALENDAR_TOOLS, ...GMAIL_TOOLS, ...TASKS_TOOLS, ...WEB_TOOLS];
 
+/** Friendly status messages shown to the user while each tool executes. */
+export const TOOL_STATUS_MESSAGES: Record<string, string> = {
+  extract_understanding: "Noting that down...",
+  update_setting: "Updating your settings...",
+  extract_contact: "Saving contact...",
+  extract_communication_style: "Noting your style...",
+  create_task: "Creating a task...",
+  create_commitment: "Logging that commitment...",
+  flag_pattern: "Noting a pattern...",
+  calendar_list_events: "Checking your calendar...",
+  calendar_create_event: "Creating a calendar event...",
+  calendar_update_event: "Updating that event...",
+  email_search: "Searching your emails...",
+  email_read: "Reading that email...",
+  email_draft: "Drafting an email...",
+  email_send: "Sending that email...",
+  tasks_list: "Checking your Google Tasks...",
+  tasks_create: "Creating a Google Task...",
+  tasks_complete: "Marking that task done...",
+  web_search: "Searching the web...",
+  web_fetch: "Reading that page...",
+};
+
 export type ToolName = (typeof ALL_TOOLS)[number]["name"];
 
 const ONBOARDING_TOOL_NAMES = ["extract_understanding", "extract_contact", "extract_communication_style"] as const;

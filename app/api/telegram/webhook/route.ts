@@ -171,6 +171,7 @@ async function handleChatMessage(
   const MAX_TOOL_ROUNDS = 3;
 
   for (let round = 0; round < MAX_TOOL_ROUNDS && currentToolCalls.length > 0; round++) {
+    await sendTypingIndicator(botToken, chatId);
     const toolResults: Array<{ tool_use_id: string; result: string }> = [];
     let hasDataResults = false;
     for (const tc of currentToolCalls) {

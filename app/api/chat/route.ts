@@ -4,6 +4,7 @@ import { assembleContext, formatContextBlock } from "@/lib/context";
 import { resolveLLMConfig, completeWithTools, completeWithToolsRaw } from "@/lib/llm-client";
 import { buildSystemPrompt } from "@/lib/system-prompt";
 import { executeTool } from "@/lib/tool-execution";
+import { TOOL_STATUS_MESSAGES } from "@/lib/llm-tools";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -51,155 +52,167 @@ export async function POST(request: NextRequest) {
     if (!existing) return NextResponse.json({ error: "Session not found" }, { status: 404 });
   }
 
-  const pkg = await assembleContext(supabase, user.id);
-  const contextBlock = formatContextBlock(pkg);
-  const system = buildSystemPrompt(contextBlock, "web");
-
-  const apiMessages = messages.map((m) => ({
-    role: m.role as "user" | "assistant",
-    content: typeof m.content === "string" ? m.content : "",
-  }));
-
-  const start = Date.now();
-  let usage: { prompt_tokens?: number; completion_tokens?: number } = {};
-  let content = "";
-  let toolCalls: Array<{ id: string; name: string; input: Record<string, unknown> }> = [];
-
-  try {
-    const result = await completeWithTools(config, system, apiMessages);
-    content = result.content;
-    toolCalls = result.toolCalls;
-    usage = result.usage ?? {};
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "LLM request failed";
-    return NextResponse.json({ error: message }, { status: 502 });
-  }
-
-  const latencyMs = Date.now() - start;
-
-  const toolsCalled: string[] = [];
-  const toolResults: Array<{ type: string; tool: string; label?: string; section?: string; ok?: boolean; reason?: string }> = [];
-
-  // Loop up to 3 rounds of tool calls
-  let currentToolCalls = toolCalls;
-  let rawMessages: Array<{ role: "user" | "assistant"; content: unknown }> = apiMessages.map((m) => ({
-    role: m.role,
-    content: m.content as unknown,
-  }));
-  const MAX_TOOL_ROUNDS = 3;
-
-  for (let round = 0; round < MAX_TOOL_ROUNDS && currentToolCalls.length > 0; round++) {
-    const roundResults: Array<{ id: string; name: string; input: Record<string, unknown>; resultText: string }> = [];
-    let hasDataResults = false;
-
-    for (const tc of currentToolCalls) {
-      toolsCalled.push(tc.name);
-      const result = await executeTool(supabase, user.id, sid, tc.name, tc.input);
-
-      const resultText = result.ok
-        ? (result.data ?? `Done: ${tc.name}`)
-        : `Failed: ${result.reason ?? "unknown error"}`;
-      roundResults.push({ id: tc.id, name: tc.name, input: tc.input, resultText });
-
-      if (result.ok && result.data) hasDataResults = true;
-
-      if (result.ok && result.tool === "extract_understanding") {
-        toolResults.push({
-          type: "tool_result",
-          tool: result.tool,
-          label: result.label,
-          section: result.section,
-        });
-      } else if (result.ok) {
-        toolResults.push({ type: "tool_result", tool: result.tool });
-      } else {
-        toolResults.push({ type: "tool_result", tool: result.tool, ok: false, reason: result.reason ?? "Tool failed" });
-      }
-    }
-
-    // Build follow-up messages with tool use + results
-    rawMessages = [
-      ...rawMessages,
-      {
-        role: "assistant",
-        content: currentToolCalls.map((tc) => ({
-          type: "tool_use" as const,
-          id: tc.id,
-          name: tc.name,
-          input: tc.input,
-        })),
-      },
-      {
-        role: "user",
-        content: roundResults.map((r) => ({
-          type: "tool_result" as const,
-          tool_use_id: r.id,
-          content: r.resultText,
-        })),
-      },
-    ];
-
-    try {
-      const followUp = await completeWithToolsRaw(config, system, rawMessages);
-      content = followUp.content;
-      currentToolCalls = followUp.toolCalls;
-      if (followUp.usage) {
-        usage = {
-          prompt_tokens: (usage.prompt_tokens ?? 0) + (followUp.usage.prompt_tokens ?? 0),
-          completion_tokens: (usage.completion_tokens ?? 0) + (followUp.usage.completion_tokens ?? 0),
-        };
-      }
-    } catch {
-      if (!content) {
-        content = roundResults.map((r) => r.resultText).join("\n");
-      }
-      currentToolCalls = [];
-    }
-  }
-
-  await supabase.from("llm_routing_log").insert({
-    user_id: user.id,
-    session_id: sid,
-    provider: config.provider,
-    model: config.model,
-    prompt_tokens: usage.prompt_tokens ?? null,
-    completion_tokens: usage.completion_tokens ?? null,
-    latency_ms: latencyMs,
-    tools_called: toolsCalled.length ? toolsCalled : null,
-  });
-
-  const newMessages = [
-    ...messages.map((m) => ({ role: m.role, content: m.content })),
-    {
-      role: "assistant" as const,
-      content,
-      tool_calls: toolCalls.length ? toolCalls : undefined,
-    },
-  ];
-  await supabase
-    .from("chat_sessions")
-    .update({
-      messages: newMessages,
-      last_message_at: new Date().toISOString(),
-    })
-    .eq("id", sid)
-    .eq("user_id", user.id);
-
+  // Start streaming immediately — processing happens in background
   const encoder = new TextEncoder();
-  const stream = new ReadableStream({
-    start(controller) {
-      for (const tr of toolResults) {
-        controller.enqueue(encoder.encode(JSON.stringify(tr) + "\n"));
-      }
-      if (content) {
-        controller.enqueue(encoder.encode(JSON.stringify({ type: "content", text: content }) + "\n"));
-      }
-      controller.enqueue(encoder.encode(JSON.stringify({ type: "done", sessionId: sid }) + "\n"));
-      controller.close();
-    },
-  });
+  const { readable, writable } = new TransformStream();
+  const writer = writable.getWriter();
 
-  return new Response(stream, {
+  const emit = async (event: Record<string, unknown>) => {
+    await writer.write(encoder.encode(JSON.stringify(event) + "\n"));
+  };
+
+  (async () => {
+    try {
+      await emit({ type: "status", message: "Thinking..." });
+
+      const pkg = await assembleContext(supabase, user.id);
+      const contextBlock = formatContextBlock(pkg);
+      const system = buildSystemPrompt(contextBlock, "web");
+
+      const apiMessages = messages.map((m) => ({
+        role: m.role as "user" | "assistant",
+        content: typeof m.content === "string" ? m.content : "",
+      }));
+
+      const start = Date.now();
+      let usage: { prompt_tokens?: number; completion_tokens?: number } = {};
+      let content = "";
+      let toolCalls: Array<{ id: string; name: string; input: Record<string, unknown> }> = [];
+
+      const result = await completeWithTools(config, system, apiMessages);
+      content = result.content;
+      toolCalls = result.toolCalls;
+      usage = result.usage ?? {};
+
+      const latencyMs = Date.now() - start;
+
+      const toolsCalled: string[] = [];
+
+      // Loop up to 3 rounds of tool calls
+      let currentToolCalls = toolCalls;
+      let rawMessages: Array<{ role: "user" | "assistant"; content: unknown }> = apiMessages.map((m) => ({
+        role: m.role,
+        content: m.content as unknown,
+      }));
+      const MAX_TOOL_ROUNDS = 3;
+
+      for (let round = 0; round < MAX_TOOL_ROUNDS && currentToolCalls.length > 0; round++) {
+        const roundResults: Array<{ id: string; name: string; input: Record<string, unknown>; resultText: string }> = [];
+        let hasDataResults = false;
+
+        for (const tc of currentToolCalls) {
+          toolsCalled.push(tc.name);
+
+          // Emit status for this tool
+          await emit({ type: "status", message: TOOL_STATUS_MESSAGES[tc.name] || "Working on it..." });
+
+          const toolResult = await executeTool(supabase, user.id, sid, tc.name, tc.input);
+
+          const resultText = toolResult.ok
+            ? (toolResult.data ?? `Done: ${tc.name}`)
+            : `Failed: ${toolResult.reason ?? "unknown error"}`;
+          roundResults.push({ id: tc.id, name: tc.name, input: tc.input, resultText });
+
+          if (toolResult.ok && toolResult.data) hasDataResults = true;
+
+          // Stream tool result immediately
+          if (toolResult.ok && toolResult.tool === "extract_understanding") {
+            await emit({
+              type: "tool_result",
+              tool: toolResult.tool,
+              label: toolResult.label,
+              section: toolResult.section,
+            });
+          } else if (toolResult.ok) {
+            await emit({ type: "tool_result", tool: toolResult.tool });
+          } else {
+            await emit({ type: "tool_result", tool: toolResult.tool, ok: false, reason: toolResult.reason ?? "Tool failed" });
+          }
+        }
+
+        // Build follow-up messages with tool use + results
+        rawMessages = [
+          ...rawMessages,
+          {
+            role: "assistant",
+            content: currentToolCalls.map((tc) => ({
+              type: "tool_use" as const,
+              id: tc.id,
+              name: tc.name,
+              input: tc.input,
+            })),
+          },
+          {
+            role: "user",
+            content: roundResults.map((r) => ({
+              type: "tool_result" as const,
+              tool_use_id: r.id,
+              content: r.resultText,
+            })),
+          },
+        ];
+
+        await emit({ type: "status", message: "Thinking..." });
+
+        try {
+          const followUp = await completeWithToolsRaw(config, system, rawMessages);
+          content = followUp.content;
+          currentToolCalls = followUp.toolCalls;
+          if (followUp.usage) {
+            usage = {
+              prompt_tokens: (usage.prompt_tokens ?? 0) + (followUp.usage.prompt_tokens ?? 0),
+              completion_tokens: (usage.completion_tokens ?? 0) + (followUp.usage.completion_tokens ?? 0),
+            };
+          }
+        } catch {
+          if (!content) {
+            content = roundResults.map((r) => r.resultText).join("\n");
+          }
+          currentToolCalls = [];
+        }
+      }
+
+      await supabase.from("llm_routing_log").insert({
+        user_id: user.id,
+        session_id: sid,
+        provider: config.provider,
+        model: config.model,
+        prompt_tokens: usage.prompt_tokens ?? null,
+        completion_tokens: usage.completion_tokens ?? null,
+        latency_ms: latencyMs,
+        tools_called: toolsCalled.length ? toolsCalled : null,
+      });
+
+      const newMessages = [
+        ...messages.map((m) => ({ role: m.role, content: m.content })),
+        {
+          role: "assistant" as const,
+          content,
+          tool_calls: toolCalls.length ? toolCalls : undefined,
+        },
+      ];
+      await supabase
+        .from("chat_sessions")
+        .update({
+          messages: newMessages,
+          last_message_at: new Date().toISOString(),
+        })
+        .eq("id", sid)
+        .eq("user_id", user.id);
+
+      if (content) {
+        await emit({ type: "content", text: content });
+      }
+      await emit({ type: "done", sessionId: sid });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Something went wrong";
+      await emit({ type: "error", message });
+    } finally {
+      await writer.close();
+    }
+  })();
+
+  return new Response(readable, {
     headers: {
       "Content-Type": "application/x-ndjson",
       "Cache-Control": "no-store",
