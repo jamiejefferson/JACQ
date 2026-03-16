@@ -132,6 +132,7 @@ function ChatPanelComponent() {
       const saved: { label?: string; section?: string }[] = [];
       const toolErrorReasons: string[] = [];
       let content = "";
+      let receivedDone = false;
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
@@ -158,6 +159,7 @@ function ChatPanelComponent() {
             } else if (event.type === "error" && event.message) {
               throw new Error(event.message);
             } else if (event.type === "done") {
+              receivedDone = true;
               if (event.sessionId) setChatSessionId(event.sessionId);
             }
           } catch (innerErr) {
@@ -166,6 +168,9 @@ function ChatPanelComponent() {
             throw innerErr;
           }
         }
+      }
+      if (!receivedDone && (content || saved.length > 0)) {
+        throw new Error("Connection to the AI was lost. Tap to retry.");
       }
       appendChatMessage({
         role: "assistant",

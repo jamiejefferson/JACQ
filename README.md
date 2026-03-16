@@ -1,6 +1,6 @@
 # Jacq — Walking Skeleton
 
-Product prototype: Sign In, onboarding, and post-login control panel (Understanding, Tasks, Activity, Settings, Relationships). Mobile-first UI per spec and wires.
+Product prototype: Sign In, onboarding (welcome → LLM setup → conversation → Connect Google), and post-login app (Home, Understanding, Tasks, Activity, Relationships, Settings). Mobile-first UI with desktop bezel (20px band above/below the viewer). In-app chat panel, delete account, and Google/Gmail/Calendar/Drive connect via OAuth.
 
 ## Run locally
 
@@ -9,9 +9,9 @@ npm install
 npm run dev
 ```
 
-Open the URL shown in the terminal (e.g. **http://localhost:3000** or, if that port is in use, **http://localhost:3001**). You will be redirected to `/sign-in`.
+Open the URL shown in the terminal (e.g. **http://localhost:3000** or **http://localhost:3007** if you use `npm run dev:clean`). You will be redirected to `/sign-in` when unauthenticated.
 
-**If the page is blank:** check the terminal for the correct port, open DevTools (F12) → Console for errors, and try a hard refresh (Ctrl+Shift+R / Cmd+Shift+R). The app sends full HTML from the server, so you should see the Sign In screen even before JavaScript runs.
+**If the page is blank:** check the terminal for the correct port, open DevTools (F12) → Console for errors, and try a hard refresh (Ctrl+Shift+R / Cmd+Shift+R).
 
 ## Auth (optional)
 
@@ -20,9 +20,11 @@ To use Google OAuth:
 1. Copy `.env.local.example` to `.env.local`.
 2. Create a [Supabase](https://supabase.com) project and add your URL and anon key.
 3. In Supabase: **Authentication → Providers** enable Google and add your Google OAuth client ID/secret.
-4. In **Authentication → URL Configuration** add redirect URL: `http://localhost:3000/auth/callback`.
+4. In **Authentication → URL Configuration** add the exact redirect URL (e.g. `http://localhost:3007/auth/callback`).
 
-Without these env vars, the app still runs: middleware skips auth and you can open `/sign-in`, `/onboarding`, and `/app` directly.
+Run the full schema once (Supabase Dashboard → SQL Editor → run `supabase/APPLY_FULL_SCHEMA.sql`) so `public.users` and `user_integrations` exist. Without these env vars and tables, the app still runs but auth and Connect Google will fail.
+
+See [docs/AUTH_SETUP.md](docs/AUTH_SETUP.md) for troubleshooting. For LLM timeout, retry, and provider scope (Anthropic-only in the current build), see [docs/LLM_CONNECTIVITY.md](docs/LLM_CONNECTIVITY.md).
 
 ## Deployer setup: Telegram (optional)
 
@@ -51,29 +53,44 @@ To host on Vercel and have Telegram connect work: set the Supabase env vars in V
 
 | Route | Description |
 |-------|-------------|
-| `/` | Redirects to `/sign-in` (or `/onboarding`/`/app` when auth is configured and session exists). |
-| `/sign-in` | Sign In screen; "Continue with Google" starts OAuth when Supabase is configured. |
-| `/auth/callback` | OAuth callback; exchanges code for session and redirects to `/onboarding`. |
-| `/onboarding` | Cutscene → Intro conversation → Connect step; "Continue" / "Skip" sets onboarding complete and redirects to `/app`. |
-| `/app` | Understanding (Memory). |
-| `/app/tasks` | Tasks kanban; first "To Do" card links to task detail. |
-| `/app/tasks/[id]` | Task detail (e.g. Team offsite). |
-| `/app/activity` | Activity (commitments, actions, patterns, autonomy). |
-| `/app/settings` | Settings groups. |
-| `/app/relationships` | Relationships list; Sarah Mitchell links to relationship detail. |
+| `/` | Redirects to `/sign-in`, `/onboarding`, or `/app` based on auth and onboarding state. |
+| `/sign-in` | Sign In; "Continue with Google" starts OAuth (redirects to provider URL when configured). |
+| `/auth/callback` | OAuth callback; exchanges code for session, ensures `public.users` and `user_integrations` (gmail/calendar/drive) when from Google, redirects to `?next=` or `/onboarding`. |
+| `/onboarding` | Redirects to welcome or next step. |
+| `/onboarding/welcome` | Welcome cutscene; CTA → LLM step. |
+| `/onboarding/llm` | LLM setup (own key or local); validate key, select model, Continue → conversation. |
+| `/onboarding/conversation` | Onboarding chat; extract_understanding → Saved panels; "Done for now" → jump-off summary card; "Connect my accounts" → connect. |
+| `/onboarding/connect` | Connect Google (OAuth) or Skip; success → `/onboarding/connect/complete` then `/app`. |
+| `/onboarding/connect/complete` | Post-connect; redirects to `/app`. |
+| `/app` | Home ("What to do next" — ideas, links to Understanding/Tasks/Relationships/Settings). |
+| `/app/understanding` | Understanding (Jacq's picture of you); sections, DataRows, JBubble, chat panel. |
+| `/app/tasks` | Tasks kanban; "+ Add" opens chat; cards → task detail. |
+| `/app/tasks/[id]` | Task detail. |
+| `/app/activity` | Activity (commitments, completion rate, pause/resume autonomy). |
+| `/app/relationships` | Relationships list; cards → relationship detail. |
 | `/app/relationships/[id]` | Relationship detail. |
+| `/app/settings` | Settings (Integrations, AI & Desktop, Communication style, Quiet hours, Delete account, Log out). |
+| `/app/settings/audit-log` | Audit log. |
 
-## Deferred (out of scope)
+## Implemented (current)
+
+- Google OAuth sign-in; auth callback creates/updates `public.users` and records gmail/calendar/drive in `user_integrations`.
+- Connect Google from onboarding and from Settings → Integrations (Gmail, Google Calendar, Google Drive).
+- Onboarding: welcome → LLM (own API key with model picker) → conversation (with jump-off summary card) → connect or skip.
+- Home screen after onboarding; Understanding, Tasks, Activity, Relationships, Settings; in-app chat panel (JBubble opens chat with context).
+- Delete account (and all my data) in Settings with confirmation modal; `DELETE /api/users/me` and cascade.
+- Desktop: 20px bezel above/below viewer; burger menu contained within same viewer frame.
+- Telegram: optional; deployer sets bot token (env or in-app Set up); users Connect via link; webhook at `/api/telegram/webhook`.
+
+## Deferred (out of scope for skeleton)
 
 - Brochureware (pre-login): Homepage, Pricing, Sign Up, Guide.
-- Real Gmail/Calendar integrations.
-- Telegram bot.
-- Desktop app.
-- In-app chat panel (JBubble is visual only).
-- Real CRUD for Memory/Tasks/Activity (data is static).
+- Real Gmail/Calendar API usage (read/send); currently only connection status is stored.
+- Desktop app; local LLM (UI shows "Not set up").
+- Full CRUD for Memory/Tasks/Activity beyond current API and chat extraction.
 
 ## Stack
 
 - Next.js 14 (App Router), TypeScript, Tailwind CSS.
-- Supabase Auth (Google OAuth) when env is set.
+- Supabase Auth (Google OAuth); `public.users` and `user_integrations` (including gmail/calendar/drive) created/updated on callback.
 - Design tokens and typography from `Spec docs/jacq-ux-reference-v1.md`; wire content from `Wires/jacq-wireframes-v6.jsx`.

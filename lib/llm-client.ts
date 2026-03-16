@@ -69,6 +69,55 @@ export type LLMResponse = {
 
 type ToolDef = { name: string; description: string; input_schema: Record<string, unknown> };
 
+/** Request timeout (ms). Kept under route maxDuration (60s) so we can emit a proper error. */
+const LLM_REQUEST_TIMEOUT_MS = 55_000;
+const LLM_RETRY_DELAY_MS = 1_500;
+
+function isRetryable(err: unknown): boolean {
+  if (err instanceof Error) {
+    const msg = err.message.toLowerCase();
+    if (msg.includes("aborted") || msg.includes("timeout") || msg.includes("econnreset") || msg.includes("etimedout") || msg.includes("network")) return true;
+  }
+  return false;
+}
+
+async function anthropicFetch(
+  config: LLMResolvedConfig,
+  body: Record<string, unknown>,
+  isRetry = false
+): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), LLM_REQUEST_TIMEOUT_MS);
+  try {
+    const res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      signal: controller.signal,
+      headers: {
+        "x-api-key": config.apiKey,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok && res.status >= 500 && res.status < 600 && !isRetry) {
+      await new Promise((r) => setTimeout(r, LLM_RETRY_DELAY_MS));
+      return anthropicFetch(config, body, true);
+    }
+    return res;
+  } catch (err) {
+    if (isRetryable(err) && !isRetry) {
+      await new Promise((r) => setTimeout(r, LLM_RETRY_DELAY_MS));
+      return anthropicFetch(config, body, true);
+    }
+    if (err instanceof Error && err.name === "AbortError") {
+      throw new Error("Connection to the AI timed out. Try again in a moment.");
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 /** Call Anthropic Messages API with tools; returns content and tool_use blocks. */
 export async function completeWithTools(
   config: LLMResolvedConfig,
@@ -90,18 +139,7 @@ export async function completeWithTools(
     tools: tools.length ? tools : undefined,
   };
 
-  const start = Date.now();
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "x-api-key": config.apiKey,
-      "anthropic-version": "2023-06-01",
-      "content-type": "application/json",
-    },
-    body: JSON.stringify(body),
-  });
-
-  const latencyMs = Date.now() - start;
+  const res = await anthropicFetch(config, body);
 
   if (!res.ok) {
     const errText = await res.text();
@@ -153,15 +191,7 @@ export async function completeWithToolsRaw(
     tools: tools.length ? tools : undefined,
   };
 
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "x-api-key": config.apiKey,
-      "anthropic-version": "2023-06-01",
-      "content-type": "application/json",
-    },
-    body: JSON.stringify(body),
-  });
+  const res = await anthropicFetch(config, body);
 
   if (!res.ok) {
     const errText = await res.text();
