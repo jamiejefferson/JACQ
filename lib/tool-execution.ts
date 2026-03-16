@@ -267,6 +267,55 @@ export async function executeTool(
       return { ok: true, tool: toolName };
     }
 
+    // --- Insight trigger tool ---
+
+    if (toolName === "create_insight_trigger") {
+      const label = typeof args.label === "string" ? args.label.trim() : "";
+      const prompt = typeof args.prompt === "string" ? args.prompt.trim() : "";
+      const scheduleType = args.schedule_type === "recurring" ? "recurring" : "one_time";
+      if (!label || !prompt) return { ok: false, tool: toolName, reason: "label and prompt are required" };
+
+      const cronExpression = typeof args.cron_expression === "string" ? args.cron_expression : null;
+      const runAt = typeof args.run_at === "string" ? args.run_at : null;
+
+      if (scheduleType === "recurring" && !cronExpression) {
+        return { ok: false, tool: toolName, reason: "cron_expression is required for recurring triggers" };
+      }
+      if (scheduleType === "one_time" && !runAt) {
+        return { ok: false, tool: toolName, reason: "run_at is required for one_time triggers" };
+      }
+
+      // Get user timezone
+      const { data: userRow } = await supabase.from("users").select("preferences").eq("id", userId).single();
+      const tz = ((userRow?.preferences as Record<string, unknown>)?.timezone as string) || "Europe/London";
+
+      const channels = Array.isArray(args.delivery_channels)
+        ? (args.delivery_channels as string[]).filter((c) => c === "telegram" || c === "web")
+        : ["telegram", "web"];
+
+      const { error } = await supabase.from("insight_triggers").insert({
+        user_id: userId,
+        label,
+        prompt,
+        schedule_type: scheduleType,
+        cron_expression: cronExpression,
+        run_at: runAt,
+        timezone: tz,
+        delivery_channels: channels,
+        enabled: true,
+        is_system_default: false,
+        created_by: "jacq",
+      });
+
+      if (error) return { ok: false, tool: toolName, reason: error.message };
+
+      const when = scheduleType === "one_time" && runAt
+        ? `at ${new Date(runAt).toLocaleString("en-GB", { timeZone: tz, dateStyle: "medium", timeStyle: "short" })}`
+        : `recurring (${cronExpression})`;
+
+      return { ok: true, tool: toolName, data: `Insight trigger created: "${label}" — ${when}. Delivery: ${channels.join(", ")}.` };
+    }
+
     // --- Calendar tools ---
 
     if (toolName === "calendar_list_events") {

@@ -7,11 +7,13 @@ import { usePathname } from "next/navigation";
 import { useAppStore } from "@/stores/app-store";
 import ChatPanel from "@/components/chat-panel";
 import { Toast } from "@/components/toast";
+import { InsightBadge } from "@/components/insight-badge";
 
 const BURGER_LINKS = [
   { label: "Home", sub: "What to do next", href: "/app" },
   { label: "Understanding", sub: "Jacq's picture of you", href: "/app/understanding" },
   { label: "Tasks", sub: "Jacq's work surface", href: "/app/tasks" },
+  { label: "Insights", sub: "Proactive briefings and alerts", href: "/app/insights" },
   { label: "Activity", sub: "Commitments, actions and patterns", href: "/app/activity" },
   { label: "Relationships", sub: "People Jacq knows about", href: "/app/relationships" },
   { label: "Settings", sub: "Integrations, LLM, preferences", href: "/app/settings" },
@@ -61,6 +63,7 @@ function TopNav({
         aria-label={burgerOpen ? "Close menu" : "Open menu"}
         aria-expanded={burgerOpen}
       >
+        <InsightBadge />
         {burgerOpen ? (
           <svg viewBox="0 0 24 24" width={16} height={16} fill="var(--jacq-t2)">
             <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
@@ -178,6 +181,7 @@ export default function AppLayout({
       action: "+ Add",
       onAction: openChatForTasks,
     },
+    "/app/insights": { title: "Insights", sub: "Proactive briefings and alerts" },
     "/app/activity": { title: "Activity", sub: "Commitments, actions and patterns" },
     "/app/settings": { title: "Settings" },
     "/app/settings/audit-log": { title: "Audit log", sub: "Changes to your preferences", back: "/app/settings" },

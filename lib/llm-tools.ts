@@ -210,6 +210,22 @@ export const TASKS_TOOLS = [
   },
 ] as const;
 
+export const INSIGHT_TOOLS = [
+  {
+    name: "create_insight_trigger",
+    description:
+      "Create a proactive insight trigger. Use this when the user asks to be briefed about something at a specific time, or when you notice an upcoming event that would benefit from preparation. For example: if the user mentions a lunch meeting tomorrow with someone, create a one-time trigger to research that person and prepare a briefing beforehand.",
+    input_schema: schemaObject({
+      label: { type: "string", description: "Short label, e.g. 'Pre-meeting brief: lunch with X'" },
+      prompt: { type: "string", description: "Investigation instruction — what should Jacq research and report on?" },
+      schedule_type: { type: "string", enum: ["recurring", "one_time"], description: "recurring for daily/weekly, one_time for a specific moment" },
+      cron_expression: { type: "string", description: "For recurring: cron expression e.g. '30 7 * * 1-5' (weekday mornings). Required for recurring." },
+      run_at: { type: "string", description: "For one_time: ISO datetime when to run. Required for one_time." },
+      delivery_channels: { type: "array", items: { type: "string" }, description: "Where to deliver: 'telegram', 'web', or both. Default both." },
+    }),
+  },
+] as const;
+
 export const WEB_TOOLS = [
   {
     name: "web_search",
@@ -230,7 +246,7 @@ export const WEB_TOOLS = [
   },
 ] as const;
 
-export const ALL_TOOLS = [...EXTRACTION_TOOLS, ...CALENDAR_TOOLS, ...GMAIL_TOOLS, ...TASKS_TOOLS, ...WEB_TOOLS];
+export const ALL_TOOLS = [...EXTRACTION_TOOLS, ...CALENDAR_TOOLS, ...GMAIL_TOOLS, ...TASKS_TOOLS, ...INSIGHT_TOOLS, ...WEB_TOOLS];
 
 /** Friendly status messages shown to the user while each tool executes. */
 export const TOOL_STATUS_MESSAGES: Record<string, string> = {
@@ -251,6 +267,7 @@ export const TOOL_STATUS_MESSAGES: Record<string, string> = {
   tasks_list: "Checking your Google Tasks...",
   tasks_create: "Creating a Google Task...",
   tasks_complete: "Marking that task done...",
+  create_insight_trigger: "Setting up a proactive briefing...",
   web_search: "Searching the web...",
   web_fetch: "Reading that page...",
 };
