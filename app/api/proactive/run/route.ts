@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isWithinQuietHours } from "@/lib/proactivity";
 import {
-  getDueTriggersForUser,
+  getAllPendingTriggersForUser,
   markTriggerRun,
   storeInsightResult,
   seedDefaultTriggers,
@@ -77,8 +77,8 @@ export async function GET(request: NextRequest) {
     // Check quiet hours
     if (isWithinQuietHours(preferences, timezone)) continue;
 
-    // Get due triggers
-    const dueTriggers = await getDueTriggersForUser(supabase, userId);
+    // Get all pending triggers (single daily run — fire everything not yet run today)
+    const dueTriggers = await getAllPendingTriggersForUser(supabase, userId);
     if (dueTriggers.length === 0) continue;
 
     for (const trigger of dueTriggers) {

@@ -175,6 +175,57 @@ export async function getDueTriggersForUser(
   });
 }
 
+/** Get all enabled triggers not yet run today (ignores time-of-day matching).
+ *  Use this when the cron only fires once per day and all triggers should run in one batch. */
+export async function getAllPendingTriggersForUser(
+  supabase: SupabaseClient,
+  userId: string
+): Promise<InsightTrigger[]> {
+  const triggers = await getTriggersForUser(supabase, userId);
+  const today = getTodayInZone(triggers[0]?.timezone || "UTC");
+
+  return triggers.filter((t) => {
+    // One-time triggers: check if run_at is today or in the past
+    if (t.schedule_type === "one_time") {
+      if (t.last_run_at) return false;
+      if (t.run_at) {
+        const runDate = t.run_at.slice(0, 10);
+        return runDate <= today;
+      }
+      return true;
+    }
+
+    // Recurring: check day-of-week matches (respect weekday-only schedules)
+    if (t.cron_expression) {
+      const parts = t.cron_expression.trim().split(/\s+/);
+      if (parts.length >= 5 && parts[4] !== "*") {
+        const tz = t.timezone || "UTC";
+        const dayStr = new Intl.DateTimeFormat("en-US", { timeZone: tz, weekday: "short" }).format(new Date());
+        const dayMap: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+        const todayDow = dayMap[dayStr] ?? 0;
+        const allowedDays: number[] = [];
+        for (const part of parts[4].split(",")) {
+          if (part.includes("-")) {
+            const [s, e] = part.split("-").map(Number);
+            for (let d = s; d <= e; d++) allowedDays.push(d);
+          } else {
+            allowedDays.push(parseInt(part, 10));
+          }
+        }
+        if (!allowedDays.includes(todayDow)) return false;
+      }
+    }
+
+    // Idempotency: skip if already run today
+    if (t.last_run_at) {
+      const lastRunDate = t.last_run_at.slice(0, 10);
+      if (lastRunDate === today) return false;
+    }
+
+    return true;
+  });
+}
+
 /** Mark a trigger as having been run. Disables one_time triggers. */
 export async function markTriggerRun(
   supabase: SupabaseClient,

@@ -3,7 +3,7 @@
   "crons": [
     {
       "path": "/api/proactive/run",
-      "schedule": "*/10 * * * *"
+      "schedule": "15 7 * * *"
     }
   ]
 }

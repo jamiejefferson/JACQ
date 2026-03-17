@@ -236,25 +236,36 @@ async function handleChatMessage(
 }
 
 export async function POST(request: NextRequest) {
+  let chatId: number | undefined;
+  let botToken: string | null = null;
+
   try {
     const body = (await request.json()) as TelegramUpdate;
     const text = body.message?.text?.trim();
-    const chatId = body.message?.chat?.id;
+    chatId = body.message?.chat?.id;
 
     if (!text || chatId == null) {
       return NextResponse.json({ ok: true });
     }
 
     const supabase = createAdminClient();
-    const botToken = await getBotToken(supabase);
+    botToken = await getBotToken(supabase);
 
     if (text.startsWith("/start")) {
       await handleStartCommand(supabase, chatId, text, botToken);
     } else if (botToken) {
       await handleChatMessage(supabase, chatId, text, botToken);
     }
-  } catch {
-    // Return 200 so Telegram does not retry
+  } catch (err) {
+    console.error("[telegram/webhook] Unhandled error:", err instanceof Error ? err.message : err);
+    // Try to notify the user something went wrong
+    try {
+      if (chatId && botToken) {
+        await sendTelegramMessage(botToken, chatId, "Sorry, something went wrong on my end. Try again in a moment.");
+      }
+    } catch {
+      // Best-effort — don't let the error notification itself fail the request
+    }
   }
   return NextResponse.json({ ok: true });
 }

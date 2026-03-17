@@ -156,7 +156,7 @@ export function isWithinQuietHours(
   timezone: string
 ): boolean {
   const qh = preferences.quiet_hours as { start?: string; end?: string } | undefined;
-  if (!qh?.start || !qh?.end) return true;
+  if (!qh?.start || !qh?.end) return false;
   const now = getCurrentTimeInZone(timezone);
   return now >= qh.start && now <= qh.end;
 }
