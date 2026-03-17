@@ -238,6 +238,35 @@ export async function executeTool(
       return { ok: true, tool: toolName };
     }
 
+    if (toolName === "complete_task") {
+      const taskId = typeof args.task_id === "string" ? args.task_id.trim() : "";
+      const taskTitle = typeof args.task_title === "string" ? args.task_title.trim() : "";
+      if (!taskId && !taskTitle) return { ok: false, tool: toolName, reason: "task_id or task_title required" };
+
+      let matchId = taskId;
+      if (!matchId) {
+        // Find by title (case-insensitive, active tasks only)
+        const { data: matches } = await supabase
+          .from("tasks")
+          .select("id, title")
+          .eq("user_id", userId)
+          .neq("status", "done")
+          .ilike("title", `%${taskTitle}%`)
+          .limit(1);
+        if (!matches?.length) return { ok: false, tool: toolName, reason: `No active task found matching "${taskTitle}"` };
+        matchId = matches[0].id;
+      }
+
+      const { error } = await supabase
+        .from("tasks")
+        .update({ status: "done", updated_at: new Date().toISOString() })
+        .eq("id", matchId)
+        .eq("user_id", userId);
+
+      if (error) return { ok: false, tool: toolName, reason: error.message };
+      return { ok: true, tool: toolName, data: "Task marked as done." };
+    }
+
     if (toolName === "create_commitment") {
       const description = String(args.description ?? "").trim();
       const due_at = typeof args.due_at === "string" ? args.due_at : null;

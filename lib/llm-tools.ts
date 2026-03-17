@@ -80,6 +80,14 @@ export const EXTRACTION_TOOLS = [
     }),
   },
   {
+    name: "complete_task",
+    description: "Mark one of the user's Jacq tasks as done. Use this when the user says they've finished a task or asks you to mark it complete. Match the task by title if no ID is given.",
+    input_schema: schemaObject({
+      task_id: { type: "string", description: "The task UUID. If not known, use task_title instead." },
+      task_title: { type: "string", description: "The task title to match (case-insensitive). Used when task_id is not available." },
+    }),
+  },
+  {
     name: "create_commitment",
     description: "Log a commitment when you promise to do something.",
     input_schema: schemaObject({
@@ -257,6 +265,7 @@ export const TOOL_STATUS_MESSAGES: Record<string, string> = {
   extract_contact: "Saving contact...",
   extract_communication_style: "Noting your style...",
   create_task: "Creating a task...",
+  complete_task: "Marking that task done...",
   create_commitment: "Logging that commitment...",
   flag_pattern: "Noting a pattern...",
   calendar_list_events: "Checking your calendar...",
