@@ -219,6 +219,13 @@ export default function SettingsPage() {
   const intStatus = (provider: string) => (integrations[provider]?.status === "active" ? "Connected" : "Not connected");
   const intColor = (provider: string) => (integrations[provider]?.status === "active" ? "green" : "t3");
 
+  // Unified Google status: connected if any of gmail/calendar/drive are active
+  const googleProviders = ["gmail", "calendar", "drive"] as const;
+  const googleConnected = googleProviders.some((p) => integrations[p]?.status === "active");
+  const googleStatus = googleConnected ? "Connected" : "Not connected — calendar, email and tasks won\u2019t work";
+  const googleColor = googleConnected ? "green" : "t3";
+  const googleAction = googleConnected ? "Reconnect" : "Connect";
+
   async function connectGranola() {
     try {
       const res = await fetch("/api/integrations/granola/connect", { method: "POST" });
@@ -378,9 +385,7 @@ export default function SettingsPage() {
     {
       label: "Integrations",
       rows: [
-        { k: "Gmail", v: intStatus("gmail"), c: intColor("gmail"), action: intStatus("gmail") === "Connected" ? "Reconnect" : "Connect", onAction: connectGoogle },
-        { k: "Google Calendar", v: intStatus("calendar"), c: intColor("calendar"), action: intStatus("calendar") === "Connected" ? "Reconnect" : "Connect", onAction: connectGoogle },
-        { k: "Google Drive", v: intStatus("drive"), c: intColor("drive"), action: intStatus("drive") === "Connected" ? "Reconnect" : "Connect", onAction: connectGoogle },
+        { k: "Google", v: googleStatus, c: googleColor, action: googleAction, onAction: connectGoogle },
         {
           k: "Telegram",
           v: !telegramStatus.configured ? "Not set up" : intStatus("telegram"),
