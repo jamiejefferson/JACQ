@@ -38,6 +38,10 @@ function ChatPanelComponent() {
   const [streamingContent, setStreamingContent] = useState("");
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [greetingLoading, setGreetingLoading] = useState(false);
+  const [showTranscriptModal, setShowTranscriptModal] = useState(false);
+  const [transcriptInput, setTranscriptInput] = useState("");
+  const [transcriptLoading, setTranscriptLoading] = useState(false);
+  const [transcriptError, setTranscriptError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -188,6 +192,34 @@ function ChatPanelComponent() {
     }
   }
 
+  async function submitTranscript() {
+    const text = transcriptInput.trim();
+    if (!text || transcriptLoading) return;
+    setTranscriptLoading(true);
+    setTranscriptError(null);
+    try {
+      const res = await fetch("/api/transcript/process", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ transcript: text, sessionId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setTranscriptError(data.error ?? "Could not process transcript");
+        return;
+      }
+      const summary = data.summary ?? "Transcript processed. Check your tasks and commitments.";
+      appendChatMessage({ role: "user", content: "[Imported transcript]" });
+      appendChatMessage({ role: "assistant", content: summary });
+      setShowTranscriptModal(false);
+      setTranscriptInput("");
+    } catch {
+      setTranscriptError("Something went wrong");
+    } finally {
+      setTranscriptLoading(false);
+    }
+  }
+
   if (!isOpen) return null;
 
   return (
@@ -300,6 +332,15 @@ function ChatPanelComponent() {
           )}
         </div>
 
+        <div className="flex-shrink-0 px-3 pb-1">
+          <button
+            type="button"
+            onClick={() => setShowTranscriptModal(true)}
+            className="text-[12px] text-jacq-t3 hover:text-jacq-t2"
+          >
+            Import transcript
+          </button>
+        </div>
         <div className="flex-shrink-0 p-3 border-t border-jacq-bord flex gap-2">
           <input
             type="text"
@@ -322,6 +363,53 @@ function ChatPanelComponent() {
           </button>
         </div>
       </div>
+
+      {showTranscriptModal && (
+        <>
+          <div
+            className="fixed inset-0 z-[72] bg-black/40"
+            onClick={() => !transcriptLoading && setShowTranscriptModal(false)}
+            onKeyDown={(e) => e.key === "Escape" && !transcriptLoading && setShowTranscriptModal(false)}
+            role="button"
+            tabIndex={0}
+            aria-label="Close"
+          />
+          <div className="fixed left-1/2 top-1/2 z-[73] w-[calc(100%-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-2xl bg-jacq-bg border border-jacq-bord shadow-xl p-4 flex flex-col gap-3">
+            <h3 className="text-[16px] font-semibold text-jacq-t1">Import transcript</h3>
+            <p className="text-[13px] text-jacq-t2">
+              Paste a meeting or call transcript. I&apos;ll extract tasks, commitments, contacts and follow-ups.
+            </p>
+            <textarea
+              value={transcriptInput}
+              onChange={(e) => setTranscriptInput(e.target.value)}
+              placeholder="Paste transcript here…"
+              rows={6}
+              className="w-full rounded-xl border border-jacq-bord bg-jacq-surf px-3 py-2.5 text-[14px] text-jacq-t1 placeholder:text-jacq-t3 resize-y min-h-[120px]"
+            />
+            {transcriptError && (
+              <p className="text-[13px] text-jacq-red">{transcriptError}</p>
+            )}
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => !transcriptLoading && setShowTranscriptModal(false)}
+                disabled={transcriptLoading}
+                className="h-10 px-4 rounded-xl border border-jacq-bord bg-jacq-surf2 text-[14px] text-jacq-t1 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={submitTranscript}
+                disabled={transcriptLoading || !transcriptInput.trim()}
+                className="h-10 px-4 rounded-xl bg-jacq-gold text-[14px] text-white font-medium disabled:opacity-50"
+              >
+                {transcriptLoading ? "Processing…" : "Process"}
+              </button>
+            </div>
+          </div>
+        </>
+      )}
     </>
   );
 }

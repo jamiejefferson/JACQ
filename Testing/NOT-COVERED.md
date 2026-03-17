@@ -1,5 +1,7 @@
 # Not Yet Covered — Test Gap List
 
+**Updated:** 2026-03-12 for current product (Home at /app, Connect Google, delete account, bezel, menu in viewer).
+
 Items from [TEST-CHECKLIST.md](TEST-CHECKLIST.md) that have not been fully verified. Use this list to tick off as you add tests or manual verification. See [FULL-TEST-AND-FIX.md](FULL-TEST-AND-FIX.md) for process.
 
 ---

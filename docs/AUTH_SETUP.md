@@ -20,7 +20,7 @@ If you only see **"user_integrations" missing**, the `user_integrations` table i
    - From the project root: `supabase db push`  
      (or `supabase migration up` if you use migrations).
 
-Then try adding your API key again.
+Then try again. The auth callback (`/auth/callback`) also ensures a row in `public.users` exists for the signed-in user and, after Google OAuth, creates/updates `user_integrations` for `gmail`, `calendar`, and `drive` so Settings shows "Connected".
 
 ## 1. Environment variables
 
@@ -54,7 +54,7 @@ Use the **same origin** (host + port) as in the browser bar when you click “Co
 ## 4. Quick checks
 
 - **Nothing happens when you click “Continue with Google”**  
-  Check the browser console for errors. Ensure `.env.local` is loaded (restart `npm run dev` after changing it).
+  The app must redirect to Google's OAuth URL. Check the browser console for errors (e.g. missing Supabase env vars). Ensure `.env.local` is loaded (restart `npm run dev` after changing it).
 
 - **You come back to the sign-in page after choosing Google**  
   Usually the redirect URL (step 2) is wrong or missing. Add the exact `http://localhost:<port>/auth/callback` you’re using.

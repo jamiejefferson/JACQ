@@ -219,6 +219,34 @@ export default function SettingsPage() {
   const intStatus = (provider: string) => (integrations[provider]?.status === "active" ? "Connected" : "Not connected");
   const intColor = (provider: string) => (integrations[provider]?.status === "active" ? "green" : "t3");
 
+  async function connectGranola() {
+    try {
+      const res = await fetch("/api/integrations/granola/connect", { method: "POST" });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setOauthError(data.error ?? "Could not connect Granola");
+        return;
+      }
+      queryClient.invalidateQueries({ queryKey: ["integrations"] });
+    } catch {
+      setOauthError("Could not connect Granola");
+    }
+  }
+
+  async function disconnectGranola() {
+    try {
+      const res = await fetch("/api/integrations/granola/disconnect", { method: "POST" });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setOauthError(data.error ?? "Could not disconnect");
+        return;
+      }
+      queryClient.invalidateQueries({ queryKey: ["integrations"] });
+    } catch {
+      setOauthError("Could not disconnect Granola");
+    }
+  }
+
   async function connectGoogle() {
     setOauthError(null);
     try {
@@ -359,6 +387,13 @@ export default function SettingsPage() {
           c: !telegramStatus.configured ? "t3" : intColor("telegram"),
           action: !telegramStatus.configured ? "Set up" : intStatus("telegram") === "Not connected" ? "Connect" : undefined,
           onAction: !telegramStatus.configured ? openTelegramSetup : intStatus("telegram") === "Not connected" ? openTelegramConnect : undefined,
+        },
+        {
+          k: "Granola",
+          v: intStatus("granola"),
+          c: intColor("granola"),
+          action: intStatus("granola") === "Connected" ? "Disconnect" : "Connect",
+          onAction: intStatus("granola") === "Connected" ? disconnectGranola : connectGranola,
         },
       ],
     },

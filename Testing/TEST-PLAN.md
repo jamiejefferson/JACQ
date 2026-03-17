@@ -1,8 +1,10 @@
 # Jacq — Test Plan
 
-**Version:** 1.0  
-**Date:** 11 March 2026  
+**Version:** 1.1  
+**Date:** 12 March 2026 (updated for current product)  
 **Based on:** Functional Spec v1.0 + Addendum v1.1
+
+**Current routes (as deployed):** `/sign-in`, `/auth/callback`, `/onboarding` (→ welcome, llm, conversation, connect, connect/complete), `/app` (Home), `/app/understanding`, `/app/tasks`, `/app/tasks/[id]`, `/app/activity`, `/app/relationships`, `/app/relationships/[id]`, `/app/settings`, `/app/settings/audit-log`. Connect Google from onboarding or Settings; auth callback creates users + gmail/calendar/drive integrations. Delete account via Settings (DELETE /api/users/me).
 
 ---
 
@@ -781,8 +783,8 @@ import { test, expect } from '@playwright/test'
 test.describe('Onboarding Flow', () => {
   test('complete onboarding journey', async ({ page }) => {
     // Sign in
-    await page.goto('/signin')
-    await page.click('button:has-text("Sign in with Google")')
+    await page.goto('/sign-in')
+    await page.click('button:has-text("Continue with Google")')
     await mockGoogleOAuth(page)
 
     // Cutscene
@@ -818,9 +820,9 @@ test.describe('Onboarding Flow', () => {
     await page.click('button:has-text("Connect Google")')
     await mockGoogleWorkspaceOAuth(page)
 
-    // Arrive at Understanding screen
-    await expect(page).toHaveURL('/understanding')
-    await expect(page.locator('text=Jacq\'s picture of you')).toBeVisible()
+    // Arrive at Home then can go to Understanding
+    await expect(page).toHaveURL('/app')
+    await expect(page.locator('text=What to do next')).toBeVisible()
   })
 
   test('resume interrupted onboarding', async ({ page }) => {

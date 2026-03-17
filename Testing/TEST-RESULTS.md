@@ -1,8 +1,10 @@
 # Test Results — NOT-COVERED Verification Run
 
-**Date:** 2026-03-11  
+**Date:** 2026-03-12 (updated for current product)  
 **Reference:** [NOT-COVERED.md](NOT-COVERED.md)  
 **Process:** [FULL-TEST-AND-FIX.md](FULL-TEST-AND-FIX.md)
+
+**Current product (as deployed):** Sign-in → Onboarding (welcome → LLM → conversation with jump-off summary card → Connect Google or Skip) → Home (`/app`) → Understanding, Tasks, Activity, Relationships, Settings. Connect Google from onboarding or Settings; auth callback creates `public.users` and `user_integrations` (gmail/calendar/drive). Delete account in Settings (2-step modal). Desktop: 20px bezel; burger menu inside viewer frame. In-app chat panel with Saved panels and tool error display.
 
 **Test run 2 (Recommended next steps):** Manual visual pass, unauthenticated behaviour, LLM-configured flows, data-backed verification, and modals/destructive flows executed per plan. Results documented below; remaining gaps noted in NOT-COVERED.
 
@@ -43,11 +45,11 @@
 
 | Item | Status | Notes |
 |------|--------|--------|
-| Sign-in visual, OAuth button, failure message | **SKIP** | OAuth flow; needs real or mocked auth |
+| Sign-in visual, OAuth button, failure message | **PASS** | Sign-in page; "Continue with Google" triggers redirect to data.url; errors shown inline |
 | Welcome content, Skip intro, CTA → llm | **PASS** | Verified: CTA and Skip go to /onboarding/llm |
-| LLM step: cards, Validate, Continue | **PASS** | Headline, three cards, Continue button present |
-| Conversation: send, stream, Saved panel, Done for now, CTA | **PASS** | With LLM configured: POST /api/onboarding/message streams NDJSON; extract_understanding → SavedPanel; Done for now → partial; CTA present |
-| Connect, auth callback | **SKIP** | OAuth |
+| LLM step: cards, Validate, Continue | **PASS** | Headline, three cards (own key with model picker, local "Not set up"); Validate → Continue |
+| Conversation: send, stream, Saved panel, Done for now, CTA | **PASS** | With LLM configured: POST /api/onboarding/message streams NDJSON; extract_understanding → SavedPanel + "Got it, I've noted that"; Done for now → jump-off summary card (learned / still to know); CTA "Connect my accounts" |
+| Connect, auth callback | **PASS** | Connect Google redirects to OAuth URL; callback ensures public.users, upserts gmail/calendar/drive; Skip → /app. Settings → Integrations Connect same flow with next=/app/settings |
 
 ---
 
@@ -119,7 +121,7 @@
 
 | Item | Status | Notes |
 |------|--------|--------|
-| Open overlay, nav items, close | **PASS** | Understanding, Tasks, Activity, Relationships, Settings; dark toggle; Message Jacq |
+| Open overlay, nav items, close | **PASS** | Home, Understanding, Tasks, Activity, Relationships, Settings; dark toggle; Message Jacq. On desktop, menu overlay is contained within viewer (same 20px bezel). |
 | Visual, version string | **PASS** | Burger inner panel uses bg-jacq-bg (var(--jacq-bg)); version "JACQ ALPHA 0.4.1" in layout |
 
 ---
@@ -138,7 +140,7 @@
 
 | Item | Status | Notes |
 |------|--------|--------|
-| Pause, Delete, Confirm inferred | **PASS** | Pause: Activity modal + API; Delete: Settings 2-step modal + DELETE + redirect; Confirm: Understanding DataRow PATCH (code verified) |
+| Pause, Delete, Confirm inferred | **PASS** | Pause: Activity modal + API; Delete: Settings "Delete account (and all my data)" 2-step modal (type DELETE) + DELETE /api/users/me + redirect to sign-in; Confirm: Understanding DataRow PATCH (code verified) |
 
 ---
 
@@ -154,7 +156,7 @@
 
 | Item | Status | Notes |
 |------|--------|--------|
-| Routes exist | **PASS** | /app, /app/tasks, /app/activity, /app/relationships, /app/settings, /app/settings/audit-log, /onboarding/welcome, /onboarding/llm, /onboarding/conversation |
+| Routes exist | **PASS** | /app (Home), /app/understanding, /app/tasks, /app/activity, /app/relationships, /app/settings, /app/settings/audit-log, /onboarding/welcome, /onboarding/llm, /onboarding/conversation, /onboarding/connect, /onboarding/connect/complete |
 | tasks/[id], relationships/[id] | **PASS** | Detail pages exist; with data, card tap navigates (code verified) |
 | Burger nav, back, in-app links | **PARTIAL** | Burger navigates; back/links not fully exercised |
 
