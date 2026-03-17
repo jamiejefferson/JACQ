@@ -121,6 +121,7 @@ export const CALENDAR_TOOLS = [
       description: { type: "string", description: "Optional event description/notes." },
       attendees: { type: "array", items: { type: "string" }, description: "Optional list of email addresses to invite." },
       location: { type: "string", description: "Optional location." },
+      calendar_id: { type: "string", description: "Optional calendar ID to create the event on. Defaults to primary calendar. Use the calendar name shown in parentheses from calendar_list_events results." },
     }),
   },
   {
@@ -134,6 +135,7 @@ export const CALENDAR_TOOLS = [
       end_time: { type: "string", description: "New end time in ISO 8601 (optional)." },
       description: { type: "string", description: "New description (optional)." },
       location: { type: "string", description: "New location (optional)." },
+      calendar_id: { type: "string", description: "Optional calendar ID. Defaults to primary." },
     }),
   },
 ] as const;

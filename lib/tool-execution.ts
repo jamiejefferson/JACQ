@@ -327,42 +327,67 @@ export async function executeTool(
       const timeMin = now.toISOString();
       const timeMax = new Date(now.getTime() + daysAhead * 86400000).toISOString();
 
-      let path = `/calendars/primary/events?timeMin=${encodeURIComponent(timeMin)}&timeMax=${encodeURIComponent(timeMax)}&singleEvents=true&orderBy=startTime&maxResults=50`;
-      if (typeof args.query === "string" && args.query.trim()) {
-        path += `&q=${encodeURIComponent(args.query.trim())}`;
-      }
-
       console.log(`[calendar_list_events] timeMin=${timeMin} timeMax=${timeMax} token=${accessToken.slice(0, 10)}...`);
 
-      const res = await googleCalendarFetch(accessToken, path);
-      if (!res.ok) {
-        const err = await res.text();
-        console.error(`[calendar_list_events] API error ${res.status}: ${err}`);
+      // Fetch all visible calendars
+      const calListRes = await googleCalendarFetch(accessToken, "/users/me/calendarList?showHidden=false&minAccessRole=reader");
+      if (!calListRes.ok) {
+        const err = await calListRes.text();
+        console.error(`[calendar_list_events] CalendarList API error ${calListRes.status}: ${err}`);
         return { ok: false, tool: toolName, reason: `Calendar API error: ${err}` };
       }
 
-      const body = (await res.json()) as { items?: Array<Record<string, unknown>>; summary?: string };
-      console.log(`[calendar_list_events] Calendar: ${body.summary ?? "unknown"}, events: ${body.items?.length ?? 0}`);
+      const calListBody = (await calListRes.json()) as {
+        items?: Array<{ id: string; summary?: string; selected?: boolean; primary?: boolean }>;
+      };
+      const calendars = (calListBody.items ?? []).filter((c) => c.selected !== false);
+      console.log(`[calendar_list_events] Found ${calendars.length} calendar(s): ${calendars.map((c) => c.summary ?? c.id).join(", ")}`);
 
-      const events = (body.items ?? []).map((e) => {
-        const start = (e.start as Record<string, string>)?.dateTime ?? (e.start as Record<string, string>)?.date ?? "";
-        const end = (e.end as Record<string, string>)?.dateTime ?? (e.end as Record<string, string>)?.date ?? "";
-        return {
-          id: e.id,
-          summary: e.summary ?? "(No title)",
-          start,
-          end,
-          location: e.location ?? null,
-          description: e.description ? String(e.description).slice(0, 200) : null,
-          attendees: Array.isArray(e.attendees) ? (e.attendees as Array<{ email?: string }>).map((a) => a.email).filter(Boolean) : [],
-        };
+      // Query events from all calendars in parallel
+      const queryParam = typeof args.query === "string" && args.query.trim() ? `&q=${encodeURIComponent(args.query.trim())}` : "";
+      const allEvents: Array<{ id: string; summary: string; start: string; end: string; location: string | null; description: string | null; attendees: string[]; calendar: string }> = [];
+
+      const fetches = calendars.map(async (cal) => {
+        const calId = encodeURIComponent(cal.id);
+        const path = `/calendars/${calId}/events?timeMin=${encodeURIComponent(timeMin)}&timeMax=${encodeURIComponent(timeMax)}&singleEvents=true&orderBy=startTime&maxResults=50${queryParam}`;
+        try {
+          const res = await googleCalendarFetch(accessToken, path);
+          if (!res.ok) {
+            console.warn(`[calendar_list_events] Skipping calendar "${cal.summary}" (${res.status})`);
+            return;
+          }
+          const body = (await res.json()) as { items?: Array<Record<string, unknown>> };
+          for (const e of body.items ?? []) {
+            const start = (e.start as Record<string, string>)?.dateTime ?? (e.start as Record<string, string>)?.date ?? "";
+            const end = (e.end as Record<string, string>)?.dateTime ?? (e.end as Record<string, string>)?.date ?? "";
+            allEvents.push({
+              id: String(e.id),
+              summary: String(e.summary ?? "(No title)"),
+              start,
+              end,
+              location: e.location ? String(e.location) : null,
+              description: e.description ? String(e.description).slice(0, 200) : null,
+              attendees: Array.isArray(e.attendees) ? (e.attendees as Array<{ email?: string }>).map((a) => a.email).filter(Boolean) as string[] : [],
+              calendar: cal.summary ?? cal.id,
+            });
+          }
+        } catch (err) {
+          console.warn(`[calendar_list_events] Error fetching calendar "${cal.summary}":`, err instanceof Error ? err.message : err);
+        }
       });
 
-      if (events.length === 0) {
+      await Promise.all(fetches);
+
+      // Sort all events by start time
+      allEvents.sort((a, b) => a.start.localeCompare(b.start));
+
+      console.log(`[calendar_list_events] Total events across all calendars: ${allEvents.length}`);
+
+      if (allEvents.length === 0) {
         return { ok: true, tool: toolName, data: `No events found in the next ${daysAhead} day(s).` };
       }
 
-      const formatted = events
+      const formatted = allEvents
         .map((e) => {
           const startDate = new Date(e.start);
           const endDate = new Date(e.end);
@@ -370,14 +395,14 @@ export async function executeTool(
           const timeStr = e.start.includes("T")
             ? `${startDate.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}–${endDate.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}`
             : "All day";
-          const parts = [`${dateStr}, ${timeStr}: ${e.summary} [id:${e.id}]`];
+          const parts = [`${dateStr}, ${timeStr}: ${e.summary} (${e.calendar}) [id:${e.id}]`];
           if (e.location) parts.push(`  Location: ${e.location}`);
           if (e.attendees.length) parts.push(`  Attendees: ${e.attendees.join(", ")}`);
           return parts.join("\n");
         })
         .join("\n");
 
-      return { ok: true, tool: toolName, data: `${events.length} event(s) in the next ${daysAhead} day(s):\n${formatted}` };
+      return { ok: true, tool: toolName, data: `${allEvents.length} event(s) in the next ${daysAhead} day(s):\n${formatted}` };
     }
 
     if (toolName === "calendar_create_event") {
@@ -390,9 +415,10 @@ export async function executeTool(
       if (!summary || !startTime || !endTime) return { ok: false, tool: toolName, reason: "summary, start_time, and end_time are required" };
 
       // Get the calendar's timezone so events are created in the right zone
+      const targetCalendar = typeof args.calendar_id === "string" && args.calendar_id.trim() ? args.calendar_id.trim() : "primary";
       let calendarTimeZone = "Europe/London";
       try {
-        const calRes = await googleCalendarFetch(accessToken, "/calendars/primary");
+        const calRes = await googleCalendarFetch(accessToken, `/calendars/${encodeURIComponent(targetCalendar)}`);
         if (calRes.ok) {
           const calData = (await calRes.json()) as { timeZone?: string };
           if (calData.timeZone) calendarTimeZone = calData.timeZone;
@@ -410,10 +436,10 @@ export async function executeTool(
         event.attendees = (args.attendees as string[]).map((email) => ({ email }));
       }
 
-      console.log(`[calendar_create_event] Creating: ${summary} | ${startTime} - ${endTime} | tz: ${calendarTimeZone}`);
+      console.log(`[calendar_create_event] Creating: ${summary} | ${startTime} - ${endTime} | tz: ${calendarTimeZone} | cal: ${targetCalendar}`);
       console.log(`[calendar_create_event] Event body: ${JSON.stringify(event)}`);
 
-      const res = await googleCalendarFetch(accessToken, "/calendars/primary/events", {
+      const res = await googleCalendarFetch(accessToken, `/calendars/${encodeURIComponent(targetCalendar)}/events`, {
         method: "POST",
         body: JSON.stringify(event),
       });
@@ -436,6 +462,7 @@ export async function executeTool(
       const eventId = typeof args.event_id === "string" ? args.event_id.trim() : "";
       if (!eventId) return { ok: false, tool: toolName, reason: "event_id is required" };
 
+      const targetCalendar = typeof args.calendar_id === "string" && args.calendar_id.trim() ? args.calendar_id.trim() : "primary";
       const patch: Record<string, unknown> = {};
       if (typeof args.summary === "string") patch.summary = args.summary;
       if (typeof args.start_time === "string") patch.start = { dateTime: args.start_time };
@@ -443,7 +470,7 @@ export async function executeTool(
       if (typeof args.description === "string") patch.description = args.description;
       if (typeof args.location === "string") patch.location = args.location;
 
-      const res = await googleCalendarFetch(accessToken, `/calendars/primary/events/${encodeURIComponent(eventId)}`, {
+      const res = await googleCalendarFetch(accessToken, `/calendars/${encodeURIComponent(targetCalendar)}/events/${encodeURIComponent(eventId)}`, {
         method: "PATCH",
         body: JSON.stringify(patch),
       });
